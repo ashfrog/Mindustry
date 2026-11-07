@@ -141,6 +141,7 @@ public class MenuFragment{
 
         MobileButton
             play = new MobileButton(Icon.play, "@campaign", () -> checkPlay(ui.planet::show)),
+            pinyin = new MobileButton(Icon.star, "@pinyin.menu", ui.pinyinEscape::start),
             custom = new MobileButton(Icon.rightOpenOut, "@customgame", () -> checkPlay(ui.custom::show)),
             maps = new MobileButton(Icon.download, "@loadgame", () -> checkPlay(ui.load::show)),
             join = new MobileButton(Icon.add, "@joingame", () -> checkPlay(ui.join::show)),
@@ -155,6 +156,7 @@ public class MenuFragment{
         if(!Core.graphics.isPortrait()){
             container.marginTop(60f);
             container.add(play);
+            container.add(pinyin);
             container.add(join);
             container.add(custom);
             container.add(maps);
@@ -175,6 +177,7 @@ public class MenuFragment{
         }else{
             container.marginTop(0f);
             container.add(play);
+            container.add(pinyin);
             container.add(maps);
             container.row();
             container.add(custom);
@@ -214,6 +217,7 @@ public class MenuFragment{
                         new MenuButton("@customgame", Icon.terrain, () -> checkPlay(ui.custom::show)),
                         new MenuButton("@loadgame", Icon.download, () -> checkPlay(ui.load::show))
                     ),
+                    new MenuButton("@pinyin.menu", Icon.star, ui.pinyinEscape::start),
                     new MenuButton("@database.button", Icon.menu,
                         new MenuButton("@schematics", Icon.paste, ui.schematics::show),
                         new MenuButton("@database", Icon.book, ui.database::show),

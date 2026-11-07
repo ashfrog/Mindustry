@@ -79,6 +79,8 @@ public class UI implements ApplicationListener, Loadable{
     public FullTextDialog fullText;
     public CampaignCompleteDialog campaignComplete;
     public CampaignRulesDialog campaignRules;
+    public PinyinLearningDialog pinyin;
+    public PinyinEscapeScene pinyinEscape;
 
     public Cursor drillCursor, unloadCursor, targetCursor, repairCursor;
 
@@ -226,6 +228,8 @@ public class UI implements ApplicationListener, Loadable{
         fullText = new FullTextDialog();
         campaignComplete = new CampaignCompleteDialog();
         campaignRules = new CampaignRulesDialog();
+        pinyin = new PinyinLearningDialog();
+        pinyinEscape = new PinyinEscapeScene();
 
         Group group = Core.scene.root;
 

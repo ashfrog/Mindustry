@@ -175,6 +175,8 @@ public class PlacementFragment{
     }
 
     boolean gridUpdate(InputHandler input){
+        if(ui.pinyinEscape != null && ui.pinyinEscape.isActive()) return false;
+
         scrollPositions.put(currentCategory, blockPane.getScrollY());
 
         if(updatePick(input)){
@@ -277,7 +279,7 @@ public class PlacementFragment{
     public void build(Group parent){
         parent.fill(full -> {
             toggler = full;
-            full.bottom().right().visible(() -> ui.hudfrag.shown());
+            full.bottom().right().visible(() -> ui.hudfrag.shown() && (ui.pinyinEscape == null || !ui.pinyinEscape.isActive()));
 
             full.table(frame -> {
 

@@ -228,6 +228,28 @@ public class DesktopInput extends InputHandler{
 
     @Override
     public void update(){
+        if(ui.pinyinEscape != null && ui.pinyinEscape.isActive()){
+            // Escape controls own both players; skip building, selection and normal mouse fire.
+            block = null;
+            mode = none;
+            splan = null;
+            commandMode = commandRect = droppingItem = false;
+            controlledType = null;
+            selectPlans.clear();
+            linePlans.clear();
+            lastPlans.clear();
+            selectedUnits.clear();
+            commandBuildings.clear();
+            player.selectedBlock = null;
+            config.forceHide();
+            if(!player.dead()){
+                player.unit().clearBuilding();
+                player.unit().mineTile = null;
+            }
+            ui.pinyinEscape.updateDesktopControls();
+            return;
+        }
+
         super.update();
 
         if(net.active() && Core.input.keyTap(Binding.playerList) && (scene.getKeyboardFocus() == null || scene.getKeyboardFocus().isDescendantOf(ui.listfrag.content) || scene.getKeyboardFocus().isDescendantOf(ui.minimapfrag.elem))){
@@ -922,6 +944,8 @@ public class DesktopInput extends InputHandler{
 
     @Override
     public boolean touchDown(float x, float y, int pointer, KeyCode button){
+        if(ui.pinyinEscape != null && ui.pinyinEscape.isActive()) return false;
+
         if(scene.hasMouse() || !commandMode) return false;
 
         if(button == KeyCode.mouseRight){

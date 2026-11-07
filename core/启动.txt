@@ -1,0 +1,2 @@
+cd C:\Users\29234\MindustryX
+.\gradlew.bat desktop:run --no-daemon
