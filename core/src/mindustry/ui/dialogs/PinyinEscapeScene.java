@@ -14,8 +14,6 @@ import mindustry.ai.*;
 import mindustry.content.*;
 import mindustry.core.*;
 import mindustry.entities.units.*;
-import mindustry.entities.bullet.*;
-import mindustry.entities.pattern.*;
 import mindustry.game.*;
 import mindustry.game.EventType.*;
 import mindustry.gen.*;
@@ -76,13 +74,10 @@ public class PinyinEscapeScene{
     private final Seq<Unit> pursuers = new Seq<>();
     private Texture portraitTexture;
     private TextureRegion portraitRegion;
-    private Unit partner;
-    private UnitType combatUnitType;
-    private Weapon combatWeapon;
-    private BulletType combatBullet;
-    private float baseBulletDamage, baseBulletSpeed, baseBulletWidth, baseBulletHeight, baseWeaponReload, baseWeaponInaccuracy;
-    private int baseShots;
-    private int combatPower;
+    private Unit firstPlayer, partner;
+    private final PinyinCoopLives lives = new PinyinCoopLives();
+    private final PinyinTeamEffects teamEffects = new PinyinTeamEffects();
+    private final float[] reviveProtection = new float[2];
     private boolean active, worldReady, chestDialogOpen, countered;
     private int energy, spawnWave;
     private float spawnTimer;
@@ -95,14 +90,14 @@ public class PinyinEscapeScene{
                 pursuers.clear();
                 chestDialogOpen = false;
                 countered = false;
-                combatPower = 0;
+                lives.reset();
+                teamEffects.reset();
+                reviveProtection[0] = reviveProtection[1] = 0f;
                 spawnWave = 0;
                 spawnTimer = 60f * 12f;
-                // Custom maps do not always trigger the normal campaign spawn handshake.
-                // Request the player unit explicitly so the escape loop is immediately playable.
-                if(player != null && player.unit() == null) player.checkSpawn();
                 randomizeQuestions();
-                spawnPartner();
+                firstPlayer = spawnPlayer(false, 9 * tilesize, 32 * tilesize);
+                partner = spawnPlayer(true, 11 * tilesize, 32 * tilesize);
                 // Map loading rebuilds the scene tree; attach the adventure HUD again afterwards.
                 ui.hudGroup.addChild(hud);
                 hud.toFront();
@@ -136,10 +131,11 @@ public class PinyinEscapeScene{
         worldReady = false;
         energy = 0;
         pursuers.clear();
-        partner = null;
+        firstPlayer = partner = null;
         chestDialogOpen = false;
         countered = false;
-        combatPower = 0;
+        lives.reset();
+        teamEffects.reset();
         spawnWave = 0;
         spawnTimer = 60f * 12f;
         for(int i = 0; i < collected.length; i++) collected[i] = false;
@@ -153,6 +149,7 @@ public class PinyinEscapeScene{
         rules.waves = false;
         rules.attackMode = false;
         rules.pvp = false;
+        rules.canGameOver = false;
         rules.fog = true;
         rules.staticFog = true;
         rules.lighting = true;
@@ -167,11 +164,10 @@ public class PinyinEscapeScene{
         worldReady = false;
         pursuers.clear();
         chestDialogOpen = false;
-        if(partner != null){
-            partner.kill();
-            partner = null;
-        }
-        restoreCombatStats();
+        if(alive(firstPlayer)) firstPlayer.remove();
+        if(alive(partner)) partner.remove();
+        firstPlayer = partner = null;
+        teamEffects.reset();
     }
 
     private void buildHud(){
@@ -188,7 +184,10 @@ public class PinyinEscapeScene{
                 }
             }).row();
             info.label(() -> Core.bundle.format("pinyin.world.status", energy, ENERGY_NEEDED, spawnWave, pursuerDistance())).color(Pal.accent).row();
-            info.label(() -> Core.bundle.format("pinyin.world.power", combatPower)).color(combatPower < 0 ? Pal.remove : Pal.heal).row();
+            info.label(() -> Core.bundle.format("pinyin.world.power", teamEffects.power())).color(Pal.heal).row();
+            info.label(() -> Core.bundle.format("pinyin.world.lives", lives.remaining(), PinyinCoopLives.startingLives)).color(Pal.accent).row();
+            info.label(() -> respawnText(0)).color(Pal.remove).visible(() -> !alive(firstPlayer)).row();
+            info.label(() -> respawnText(1)).color(Pal.remove).visible(() -> !alive(partner)).row();
             info.add("@pinyin.world.help").color(Color.lightGray).wrap().width(330f).row();
             info.button("@pinyin.world.counter", Icon.commandAttack, this::counterattack)
                 .visible(() -> active && energy >= ENERGY_NEEDED && !countered && !pursuers.isEmpty())
@@ -251,11 +250,61 @@ public class PinyinEscapeScene{
         return runQuestions[index] == null ? QUESTION_BANK[index % QUESTION_BANK.length] : runQuestions[index];
     }
 
-    private void spawnPartner(){
-        if(!active || player == null || player.unit() == null || partner != null) return;
-        partner = UnitTypes.alpha.spawn(player.team(), 10 * tilesize, 32 * tilesize);
-        partner.controller(new PartnerController());
-        partner.aim(partner.x + 1f, partner.y, true);
+    private Unit spawnPlayer(boolean second, float x, float y){
+        Unit unit = UnitTypes.alpha.spawn(player.team(), x, y);
+        if(second){
+            unit.controller(new PartnerController());
+        }else{
+            player.unit(unit);
+            player.set(unit);
+            player.shooting = false;
+        }
+        unit.aim(x + 1f, y, true);
+        teamEffects.inherit(unit);
+        return unit;
+    }
+
+    private boolean alive(Unit unit){
+        return unit != null && !unit.dead && unit.isAdded();
+    }
+
+    private String respawnText(int index){
+        return Core.bundle.format("pinyin.world.respawning", index + 1, lives.secondsLeft(index));
+    }
+
+    private void revive(int index){
+        Unit survivor = index == 0 ? partner : firstPlayer;
+        Tile destination = null;
+        // Search a close, clear tile; keep respawns away from walls, chests and pursuers.
+        for(int radius = 1; radius <= 5 && destination == null; radius++){
+            for(int dx = -radius; dx <= radius && destination == null; dx++){
+                for(int dy = -radius; dy <= radius; dy++){
+                    if(Math.max(Math.abs(dx), Math.abs(dy)) != radius) continue;
+                    Tile tile = world.tile(survivor.tileX() + dx, survivor.tileY() + dy);
+                    if(tile == null || tile.x < 2 || tile.y < 2 || tile.x >= WIDTH - 2 || tile.y >= HEIGHT - 2 || tile.solid()) continue;
+                    boolean safe = true;
+                    for(Unit pursuer : pursuers){
+                        if(alive(pursuer) && pursuer.within(tile.worldx(), tile.worldy(), tilesize * 2f)){
+                            safe = false;
+                            break;
+                        }
+                    }
+                    if(safe){
+                        destination = tile;
+                        break;
+                    }
+                }
+            }
+        }
+        Unit unit = spawnPlayer(index == 1, destination == null ? survivor.x : destination.worldx(),
+            destination == null ? survivor.y : destination.worldy());
+        if(index == 0) firstPlayer = unit;
+        else partner = unit;
+        lives.revived(index);
+        reviveProtection[index] = 60f * 2f;
+        unit.apply(StatusEffects.invincible, reviveProtection[index]);
+        Fx.spawn.at(unit);
+        ui.showInfoToast(Core.bundle.format("pinyin.world.revived", index + 1), 2f);
     }
 
     private void drawPartnerPortrait(){
@@ -278,83 +327,33 @@ public class PinyinEscapeScene{
     }
 
     public void updateDesktopControls(){
-        Unit unit = player == null ? null : player.unit();
-        if(unit == null || player.dead()) return;
-        captureCombatStats(unit);
-        PinyinPlayerInput.update(unit, false, nearestPursuer(unit), controlsEnabled());
-        player.shooting = unit.isShooting;
-        player.boosting = false;
-        player.mouseX = unit.aimX;
-        player.mouseY = unit.aimY;
-        if(!controlsEnabled() && partner != null) partner.controlWeapons(false, false);
-        if(partner != null && partner.isValid()){
-            Core.camera.position.lerpDelta((unit.x + partner.x) / 2f, (unit.y + partner.y) / 2f, 0.08f);
+        if(alive(firstPlayer)){
+            PinyinPlayerInput.update(firstPlayer, false, nearestPursuer(firstPlayer), controlsEnabled());
+            player.shooting = firstPlayer.isShooting;
+            player.boosting = false;
+            player.mouseX = firstPlayer.aimX;
+            player.mouseY = firstPlayer.aimY;
         }else{
-            Core.camera.position.lerpDelta(unit, 0.08f);
+            player.shooting = false;
         }
-    }
-
-    private void captureCombatStats(Unit unit){
-        if(unit.type == combatUnitType && combatWeapon != null) return;
-        restoreCombatStats();
-        if(unit.type.weapons.isEmpty()) return;
-        combatUnitType = unit.type;
-        combatWeapon = unit.type.weapons.first();
-        combatBullet = combatWeapon.bullet;
-        baseBulletDamage = combatBullet.damage;
-        baseBulletSpeed = combatBullet.speed;
-        baseBulletWidth = combatBullet instanceof BasicBulletType basic ? basic.width : 0f;
-        baseBulletHeight = combatBullet instanceof BasicBulletType basic ? basic.height : 0f;
-        baseWeaponReload = combatWeapon.reload;
-        baseWeaponInaccuracy = combatWeapon.inaccuracy;
-        baseShots = combatWeapon.shoot.shots;
-        refreshCombatStats();
-    }
-
-    private void refreshCombatStats(){
-        if(combatWeapon == null || combatBullet == null) return;
-        int level = combatPower;
-        float damageScale = Math.max(0.35f, 1f + level * 0.3f);
-        float reloadScale = level >= 0 ? 1f / (1f + level * 0.12f) : 1f + (-level * 0.2f);
-        combatBullet.damage = baseBulletDamage * damageScale;
-        combatBullet.speed = baseBulletSpeed * Math.max(0.7f, 1f + level * 0.08f);
-        combatWeapon.reload = baseWeaponReload * reloadScale;
-        combatWeapon.inaccuracy = baseWeaponInaccuracy + Math.max(0, level - 2) * 3f;
-        combatWeapon.shoot.shots = baseShots + Math.max(0, level - 1);
-        if(combatBullet instanceof BasicBulletType basic){
-            float widthScale = Math.max(0.55f, 1f + level * 0.22f);
-            basic.width = baseBulletWidth * widthScale;
-            basic.height = baseBulletHeight * widthScale;
+        if(!controlsEnabled() && alive(partner)) partner.controlWeapons(false, false);
+        if(alive(firstPlayer) && alive(partner)){
+            Core.camera.position.lerpDelta((firstPlayer.x + partner.x) / 2f, (firstPlayer.y + partner.y) / 2f, 0.08f);
+        }else if(alive(firstPlayer) || alive(partner)){
+            Core.camera.position.lerpDelta(alive(firstPlayer) ? firstPlayer : partner, 0.08f);
         }
-    }
-
-    private void restoreCombatStats(){
-        if(combatWeapon != null && combatBullet != null){
-            combatBullet.damage = baseBulletDamage;
-            combatBullet.speed = baseBulletSpeed;
-            if(combatBullet instanceof BasicBulletType basic){
-                basic.width = baseBulletWidth;
-                basic.height = baseBulletHeight;
-            }
-            combatWeapon.reload = baseWeaponReload;
-            combatWeapon.inaccuracy = baseWeaponInaccuracy;
-            combatWeapon.shoot.shots = baseShots;
-        }
-        combatUnitType = null;
-        combatWeapon = null;
-        combatBullet = null;
     }
 
     private String combatBoostText(){
-        return combatPower >= 4 ? Core.bundle.get("pinyin.world.boost.scatter")
-            : combatPower >= 3 ? Core.bundle.get("pinyin.world.boost.dense")
-            : combatPower >= 2 ? Core.bundle.get("pinyin.world.boost.thick")
+        return teamEffects.power() >= 4 ? Core.bundle.get("pinyin.world.boost.scatter")
+            : teamEffects.power() >= 3 ? Core.bundle.get("pinyin.world.boost.dense")
+            : teamEffects.power() >= 2 ? Core.bundle.get("pinyin.world.boost.thick")
             : Core.bundle.get("pinyin.world.boost.damage");
     }
 
     private String combatWeaknessText(){
-        return combatPower <= -3 ? Core.bundle.get("pinyin.world.weak.broken")
-            : combatPower <= -2 ? Core.bundle.get("pinyin.world.weak.slow")
+        return teamEffects.power() <= -3 ? Core.bundle.get("pinyin.world.weak.broken")
+            : teamEffects.power() <= -2 ? Core.bundle.get("pinyin.world.weak.slow")
             : Core.bundle.get("pinyin.world.weak.power");
     }
 
@@ -369,34 +368,52 @@ public class PinyinEscapeScene{
 
     private void update(){
         if(!active || !worldReady || !state.isPlaying() || player == null) return;
-        if(player.unit() == null){
-            player.checkSpawn();
+        teamEffects.update(Time.delta);
+        for(int i = 0; i < 2; i++){
+            reviveProtection[i] = Math.max(0f, reviveProtection[i] - Time.delta);
+            Unit unit = i == 0 ? firstPlayer : partner;
+            Unit nearest = alive(unit) ? nearestPursuer(unit) : null;
+            if(nearest != null && reviveProtection[i] <= 0f && unit.within(nearest, tilesize * 1.4f)){
+                unit.kill();
+            }
+        }
+        int before = lives.remaining();
+        lives.update(alive(firstPlayer), alive(partner), Time.delta);
+        if(lives.ended()){
+            finish(Core.bundle.get(lives.remaining() == 0 ? "pinyin.world.noLives" : "pinyin.world.teamLost"));
             return;
         }
-        if(partner == null) spawnPartner();
+        if(before != lives.remaining()){
+            ui.showInfoToast(Core.bundle.format("pinyin.world.lifeLost", lives.remaining()), 2f);
+        }
+        for(int i = 0; i < 2; i++){
+            if(lives.ready(i)) revive(i);
+        }
 
         pursuers.removeAll(unit -> unit == null || unit.dead() || !unit.isAdded());
         spawnTimer -= Time.delta;
         if(spawnTimer <= 0f) spawnMonster();
 
-        Unit playerUnit = player.unit();
         if(!chestDialogOpen){
             for(int i = 0; i < CHESTS.length; i++){
-                if(!collected[i] && playerUnit.within(CHESTS[i][0] * tilesize, CHESTS[i][1] * tilesize, tilesize * 2.2f)){
+                if(!collected[i] && (atChest(firstPlayer, i) || atChest(partner, i))){
                     openChest(i);
                     break;
                 }
             }
         }
 
-        Unit nearest = nearestPursuer(playerUnit);
-        if(nearest != null && playerUnit.within(nearest, tilesize * 1.4f)){
-            caught();
-        }
-
-        if(countered && playerUnit.within((WIDTH - 7) * tilesize, 6 * tilesize, tilesize * 3f)){
+        if(countered && (atExit(firstPlayer) || atExit(partner))){
             escaped();
         }
+    }
+
+    private boolean atChest(Unit unit, int index){
+        return alive(unit) && unit.within(CHESTS[index][0] * tilesize, CHESTS[index][1] * tilesize, tilesize * 2.2f);
+    }
+
+    private boolean atExit(Unit unit){
+        return alive(unit) && unit.within((WIDTH - 7) * tilesize, 6 * tilesize, tilesize * 3f);
     }
 
     private void openChest(int index){
@@ -429,44 +446,26 @@ public class PinyinEscapeScene{
         if(choice == 0){
             collected[index] = true;
             energy++;
-            combatPower = Math.min(5, combatPower + 1);
-            applyBoost();
+            teamEffects.correct(energy, Mathf.chance(0.35f), alive(firstPlayer) ? firstPlayer : null, alive(partner) ? partner : null);
             pushPursuerBack();
             grantReward();
             Sounds.uiUnlock.play();
             ui.showInfoToast(Core.bundle.format("pinyin.world.correct", question.character, energy, ENERGY_NEEDED, combatBoostText()), 3f);
         }else{
-            combatPower = Math.max(-3, combatPower - 1);
-            refreshCombatStats();
-            if(player.unit() != null){
-                player.unit().damage(12f);
-                player.unit().apply(StatusEffects.slow, 60f * 4f);
-            }
+            teamEffects.wrong(alive(firstPlayer) ? firstPlayer : null, alive(partner) ? partner : null);
             spawnMonster();
             Sounds.explosion.play();
             ui.showInfoToast(Core.bundle.format("pinyin.world.wrong", question.choices[0], combatWeaknessText()), 3f);
         }
     }
 
-    private void applyBoost(){
-        Unit unit = player.unit();
-        if(unit == null) return;
-        if(energy == 1) unit.apply(StatusEffects.fast, 60f * 20f);
-        if(energy == 2) unit.apply(StatusEffects.overclock, 60f * 20f);
-        if(energy >= ENERGY_NEEDED) unit.shield += 80f;
-        refreshCombatStats();
-    }
-
     private void grantReward(){
         var core = player.team().core();
         if(core != null) core.items.add(Items.copper, 45 + energy * 25);
-        if(Mathf.chance(0.35f) && player.unit() != null){
-            player.unit().apply(StatusEffects.shielded, 60f * 6f);
-        }
     }
 
     private void spawnMonster(){
-        if(!active || player == null || player.unit() == null) return;
+        if(!active || (!alive(firstPlayer) && !alive(partner))) return;
 
         int side = Mathf.random(3);
         int x = side == 0 ? 3 : side == 1 ? WIDTH - 4 : Mathf.random(3, WIDTH - 4);
@@ -486,10 +485,11 @@ public class PinyinEscapeScene{
     }
 
     private void pushPursuerBack(){
-        if(player.unit() == null) return;
         for(Unit pursuer : pursuers){
             if(pursuer == null || pursuer.dead()) continue;
-            Vec2 away = Tmp.v1.set(pursuer).sub(player.unit()).nor();
+            Unit target = nearestPlayer(pursuer);
+            if(target == null) continue;
+            Vec2 away = Tmp.v1.set(pursuer).sub(target).nor();
             pursuer.set(pursuer.x + away.x * tilesize * 4f, pursuer.y + away.y * tilesize * 4f);
         }
     }
@@ -504,23 +504,31 @@ public class PinyinEscapeScene{
         Sounds.explosion.play();
     }
 
-    private void caught(){
-        if(!active) return;
-        active = false;
-        ui.showInfoToast("@pinyin.world.caught", 3f);
-        Core.app.post(() -> state.set(GameState.State.menu));
+    private void escaped(){
+        finish(Core.bundle.format("pinyin.world.escaped", energy));
     }
 
-    private void escaped(){
-        if(!active) return;
-        active = false;
-        ui.showInfoToast(Core.bundle.format("pinyin.world.escaped", energy), 3f);
-        Core.app.post(() -> state.set(GameState.State.menu));
+    private void finish(String message){
+        stop();
+        Core.app.post(() -> {
+            state.set(GameState.State.menu);
+            ui.showInfoFade(message);
+        });
     }
 
     private int pursuerDistance(){
-        Unit nearest = nearestPursuer(player == null ? null : player.unit());
-        return nearest == null ? 0 : (int)(nearest.dst(player.unit()) / tilesize);
+        float distance = Float.MAX_VALUE;
+        for(Unit unit : pursuers){
+            Unit target = alive(unit) ? nearestPlayer(unit) : null;
+            if(target != null) distance = Math.min(distance, unit.dst(target));
+        }
+        return distance == Float.MAX_VALUE ? 0 : (int)(distance / tilesize);
+    }
+
+    private Unit nearestPlayer(Unit from){
+        if(!alive(firstPlayer)) return alive(partner) ? partner : null;
+        if(!alive(partner)) return firstPlayer;
+        return from.dst2(firstPlayer) <= from.dst2(partner) ? firstPlayer : partner;
     }
 
     private Unit nearestPursuer(Unit target){
@@ -570,10 +578,12 @@ public class PinyinEscapeScene{
     private class PursuerAI extends AIController{
         @Override
         public void updateMovement(){
-            if(unit == null || player == null || player.unit() == null || player.unit().dead()) return;
-            unit.aimLook(player.unit());
-            float chaseSpeed = Math.min(unit.speed() * 0.38f, player.unit().speed() * 0.60f);
-            unit.movePref(vec.set(player.unit()).sub(unit).setLength(chaseSpeed));
+            if(unit == null) return;
+            Unit target = nearestPlayer(unit);
+            if(target == null) return;
+            unit.aimLook(target);
+            float chaseSpeed = Math.min(unit.speed() * 0.38f, target.speed() * 0.60f);
+            unit.movePref(vec.set(target).sub(unit).setLength(chaseSpeed));
         }
     }
 

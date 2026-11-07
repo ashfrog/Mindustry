@@ -640,6 +640,8 @@ public class CoreBlock extends StorageBlock{
         }
 
         public void requestSpawn(Player player){
+            // The co-op escape scene owns its limited, delayed teammate respawns.
+            if(ui != null && ui.pinyinEscape != null && ui.pinyinEscape.isActive() && player == Vars.player) return;
             //do not try to respawn in unsupported environments at all
             if(!unitType.supportsEnv(state.rules.env) || !allowSpawn) return;
 
