@@ -131,8 +131,10 @@ public class PinyinEnemyController extends AIController{
     public static void equip(Unit unit, Kind kind, int difficulty){
         float tier = Math.max(0, difficulty - 1), scale = 1f + tier * 0.16f;
         float healthScale = 1f + tier * 0.4f + tier * tier * 0.055f;
-        unit.maxHealth = unit.health = (boss(kind) ? (kind == Kind.ram ? 3200f : 2600f) : kind == Kind.flame || kind == Kind.artillery ? 220f : 130f) * healthScale;
-        unit.armor = boss(kind) ? 2f : 0f;
+        float bossHealth = kind == Kind.siege ? 6800f : kind == Kind.ram ? 5200f : 4200f;
+        unit.maxHealth = unit.health = (boss(kind) ? bossHealth : kind == Kind.flame || kind == Kind.artillery ? 220f : 130f) * healthScale;
+        unit.armor = boss(kind) ? 4f + tier * 0.35f : 0f;
+        if(boss(kind)) unit.shield = 180f + tier * 45f;
         for(int i = 0; i < unit.mounts.length; i++){
             Weapon weapon = unit.type.weapons.get(i).copy();
             BulletType bullet = PinyinArsenal.create(ammunition(kind), (boss(kind) ? 7f : 5f) * scale, true);

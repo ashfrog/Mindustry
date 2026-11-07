@@ -73,6 +73,11 @@ public class PinyinTeamEffects{
         return changed;
     }
 
+    /** Keep a child's active answer streak alive when they keep finding correct answers. */
+    public void refreshActiveBoosts(){
+        for(AnswerBoost boost : boosts) if(boost.level > 0) boost.remaining = Math.max(boost.remaining, boostDuration);
+    }
+
     public void update(float delta){ update(delta, null); }
 
     public void update(float delta, Unit unit){

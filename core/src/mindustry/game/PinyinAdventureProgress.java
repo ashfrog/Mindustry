@@ -22,8 +22,8 @@ public class PinyinAdventureProgress{
     public int stage(){ return stage; }
     public int chapter(){ return chapter; }
     public int difficulty(){ return (chapter - 1) * PinyinAdventureMap.stages + stage + 1; }
-    public int waveSize(){ return Math.min(24, 4 + difficulty()); }
-    public int enemyLimit(){ return Math.min(120, 36 + difficulty() * 6); }
+    public int waveSize(){ return Math.min(40, 4 + difficulty()); }
+    public int enemyLimit(){ return Math.min(300, 36 + difficulty() * 8); }
     public float waveInterval(){ return 60f * Math.max(2.5f, 6f / (1f + (difficulty() - 1) * 0.14f)); }
     public int answers(){ return answers; }
     public int kills(){ return kills; }

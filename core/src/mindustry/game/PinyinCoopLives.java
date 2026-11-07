@@ -26,7 +26,9 @@ public class PinyinCoopLives{
     }
 
     public void update(boolean firstAlive, boolean secondAlive, float delta){
-        if(ended) return;
+        // A wiped team may still spend its remaining lives on the two respawn timers.
+        // Only zero lives is a terminal game-over state.
+        if(ended && remaining == 0) return;
         if(delta > 0f && (firstAlive || secondAlive)){
             lifeClock += delta;
             while(lifeClock >= lifeInterval){
@@ -51,10 +53,19 @@ public class PinyinCoopLives{
         return !ended && !alive[index] && alive[1 - index] && countdown[index] == 0f;
     }
 
+    public boolean teamDown(){
+        return ended && remaining > 0 && !alive[0] && !alive[1];
+    }
+
+    public boolean respawnReady(int index){
+        return teamDown() && !alive[index] && countdown[index] == 0f;
+    }
+
     public void revived(int index){
-        if(!ready(index)) return;
+        if(!ready(index) && !respawnReady(index)) return;
         alive[index] = true;
         countdown[index] = -1f;
+        ended = false;
     }
 
     public int remaining(){

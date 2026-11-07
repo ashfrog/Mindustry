@@ -84,6 +84,8 @@ public class PinyinEscapeScene{
     private final Seq<Unit> allies = new Seq<>();
     private final Seq<SupplyDrop> drops = new Seq<>();
     private final PinyinAdventureProgress adventure = new PinyinAdventureProgress();
+    private final PinyinAdventureEvents sideEvent = new PinyinAdventureEvents();
+    private final Vec2 sideEventPoint = new Vec2();
     private PinyinAdventureMap layout = new PinyinAdventureMap(System.nanoTime());
     private Texture portraitTexture;
     private TextureRegion portraitRegion;
@@ -104,6 +106,8 @@ public class PinyinEscapeScene{
     private int carriedDrones;
     private float spawnTimer;
     private final float[] chestCooldown = new float[2];
+    private float bossSignal;
+    private float sideEventCooldown;
     private float supplyTimer;
     private float previousCameraScale;
     private Unit guardian;
@@ -172,6 +176,9 @@ public class PinyinEscapeScene{
         supplyTimer = 60f * 20f;
         feedback.clear();
         spawnWave = 0;
+        bossSignal = 0f;
+        sideEvent.reset();
+        sideEventCooldown = 60f * 12f;
         spawnTimer = 60f * 12f;
         ui.pinyin.hide();
         loadChapter();
@@ -309,10 +316,21 @@ public class PinyinEscapeScene{
     private String objectiveText(){
         if(adventure.ready()) return Core.bundle.get("pinyin.adventure.exitReady");
         String answers = Core.bundle.format("pinyin.adventure.answers", adventure.answers(), adventure.requiredAnswers());
-        return answers + "\n" + switch(adventure.stage()){
+        String base = answers + "\n" + switch(adventure.stage()){
             case 0, 1 -> Core.bundle.format("pinyin.adventure.kills", adventure.kills(), adventure.requiredKills());
             case 2 -> Core.bundle.format("pinyin.adventure.charge", adventure.chargeSeconds(), 25);
             default -> Core.bundle.get(adventure.bossDefeated() ? "pinyin.adventure.bossDone" : "pinyin.adventure.bossGoal");
+        };
+        return sideEvent.active() ? base + "\n" + eventText() : base;
+    }
+
+    private String eventText(){
+        if(!sideEvent.active()) return "";
+        return switch(sideEvent.kind()){
+            case hunt -> Core.bundle.format("pinyin.event.hunt", sideEvent.count(), sideEvent.target(), sideEvent.secondsLeft());
+            case rescue -> Core.bundle.format("pinyin.event.rescue", (int)(sideEvent.progress() * 100f), sideEvent.secondsLeft());
+            case rhythm -> Core.bundle.format("pinyin.event.rhythm", sideEvent.count(), sideEvent.target(), sideEvent.secondsLeft());
+            case survive -> Core.bundle.format("pinyin.event.survive", sideEvent.secondsLeft());
         };
     }
 
@@ -390,11 +408,18 @@ public class PinyinEscapeScene{
         Unit survivor = index == 0 ? partner : firstPlayer;
         Tile destination = null;
         // Search a close, clear tile; keep respawns away from walls, chests and pursuers.
+        int originX = survivor == null ? World.toTile(safePosition[index == 0 ? 1 : 0].x) : survivor.tileX();
+        int originY = survivor == null ? World.toTile(safePosition[index == 0 ? 1 : 0].y) : survivor.tileY();
+        if(originX <= 0){
+            Point2 entry = layout.entrances[adventure.stage()];
+            originX = entry.x;
+            originY = entry.y;
+        }
         for(int radius = 1; radius <= 5 && destination == null; radius++){
             for(int dx = -radius; dx <= radius && destination == null; dx++){
                 for(int dy = -radius; dy <= radius; dy++){
                     if(Math.max(Math.abs(dx), Math.abs(dy)) != radius) continue;
-                    Tile tile = world.tile(survivor.tileX() + dx, survivor.tileY() + dy);
+                    Tile tile = world.tile(originX + dx, originY + dy);
                     int stageLeft = PinyinAdventureMap.left(adventure.stage());
                     if(tile == null || tile.x < stageLeft + 2 || tile.x > PinyinAdventureMap.right(adventure.stage()) - 2 || tile.y < 3 || tile.y >= HEIGHT - 3 || tile.solid()) continue;
                     boolean safe = true;
@@ -411,8 +436,10 @@ public class PinyinEscapeScene{
                 }
             }
         }
-        Unit unit = spawnPlayer(index == 1, destination == null ? survivor.x : destination.worldx(),
-            destination == null ? survivor.y : destination.worldy());
+        float fallbackX = survivor == null ? safePosition[index == 0 ? 1 : 0].x : survivor.x;
+        float fallbackY = survivor == null ? safePosition[index == 0 ? 1 : 0].y : survivor.y;
+        Unit unit = spawnPlayer(index == 1, destination == null ? fallbackX : destination.worldx(),
+            destination == null ? fallbackY : destination.worldy());
         if(index == 0) firstPlayer = unit;
         else partner = unit;
         lives.revived(index);
@@ -436,6 +463,8 @@ public class PinyinEscapeScene{
         int stage = adventure.stage(), start = stage * PinyinAdventureMap.chestsPerStage;
         // Learning text and navigation must remain readable above the night lighting.
         Draw.z(Layer.playerName + 1f);
+        drawTopObjective(stage);
+        drawSideEvent();
         for(int i = start; i < start + PinyinAdventureMap.chestsPerStage; i++){
             Point2 chest = layout.chests[i];
             if(collected[i]){
@@ -486,10 +515,16 @@ public class PinyinEscapeScene{
         Fonts.outline.draw(Core.bundle.get(campActive ? "pinyin.adventure.campActiveMarker" : "pinyin.adventure.campMarker"),
             camp.x * tilesize, camp.y * tilesize + 42f, Pal.heal, 0.35f, false, Align.center);
         if(stage == 2){
-            Draw.color(Pal.accent);
-            Lines.dashCircle(beacon.x * tilesize, beacon.y * tilesize, tilesize * 11f);
+            Draw.z(Layer.playerName + 12f);
+            float pulse = 1f + Mathf.absin(8f, 2f);
+            Draw.color(Color.valueOf("ffe45c"), 0.16f);
+            Fill.circle(beacon.x * tilesize, beacon.y * tilesize, tilesize * (14f + pulse));
+            Draw.color(Color.valueOf("ffe45c"));
+            Lines.stroke(3f);
+            Lines.circle(beacon.x * tilesize, beacon.y * tilesize, tilesize * (12f + pulse));
+            Lines.dashCircle(beacon.x * tilesize, beacon.y * tilesize, tilesize * 14f);
             Fonts.outline.draw(Core.bundle.format("pinyin.adventure.chargeMarker", adventure.chargeSeconds()),
-                beacon.x * tilesize, beacon.y * tilesize + 12f, Pal.accent, 0.4f, false, Align.center);
+                beacon.x * tilesize, beacon.y * tilesize + 12f, Color.valueOf("ffe45c"), 0.5f, false, Align.center);
             Draw.color(Color.darkGray);
             Fill.rect(beacon.x * tilesize, beacon.y * tilesize - 18f, 48f, 5f);
             Draw.color(Pal.accent);
@@ -514,6 +549,7 @@ public class PinyinEscapeScene{
         for(Unit enemy : pursuers){
             if(alive(enemy) && enemy.controller() instanceof PinyinEnemyController ai) ai.drawWarning();
         }
+        if(alive(guardian)) drawBossPresence();
         drawWorldQuestion();
         drawTurretPads();
         Draw.z(Layer.playerName + 4f);
@@ -576,6 +612,55 @@ public class PinyinEscapeScene{
         Draw.reset();
     }
 
+    private void drawTopObjective(int stage){
+        String text = "第" + (stage + 1) + "关 · " + objectiveText().replace('\n', '　');
+        float x = Core.camera.position.x;
+        float y = Core.camera.position.y + Core.camera.height / 2f - 18f;
+        Draw.z(Layer.playerName + 30f);
+        Draw.color(Color.black, 0.72f);
+        Fill.rect(x, y - 6f, Math.min(Core.camera.width * 0.7f, 520f), 30f);
+        Fonts.outline.draw(text, x, y + 4f, adventure.ready() ? Pal.heal : Color.white, 0.55f, false, Align.center);
+        Draw.reset();
+    }
+
+    private void drawSideEvent(){
+        if(!sideEvent.active()) return;
+        float x = sideEventPoint.x, y = sideEventPoint.y;
+        Color color = sideEvent.kind() == PinyinAdventureEvents.Kind.hunt ? Pal.remove
+            : sideEvent.kind() == PinyinAdventureEvents.Kind.rescue ? Pal.heal
+            : sideEvent.kind() == PinyinAdventureEvents.Kind.rhythm ? Pal.accent : Pal.lancerLaser;
+        Draw.z(Layer.playerName + 14f);
+        Draw.color(color, 0.14f);
+        Fill.circle(x, y, tilesize * (sideEvent.kind() == PinyinAdventureEvents.Kind.rescue ? 9f : 5f));
+        Draw.color(color);
+        Lines.stroke(2.5f);
+        Lines.circle(x, y, tilesize * (sideEvent.kind() == PinyinAdventureEvents.Kind.rescue ? 8f : 4f) + Mathf.absin(6f, 2f));
+        Lines.circle(x, y, tilesize * 10f + Mathf.absin(8f, 3f));
+        String icon = sideEvent.kind() == PinyinAdventureEvents.Kind.hunt ? "⚔" : sideEvent.kind() == PinyinAdventureEvents.Kind.rescue ? "♥" : sideEvent.kind() == PinyinAdventureEvents.Kind.rhythm ? "♪" : "⚡";
+        Fonts.outline.draw(icon + " " + eventText(), x, y + 12f * tilesize, color, 0.45f, false, Align.center);
+        Drawf.light(x, y, tilesize * 12f, color, 0.7f);
+        Draw.reset();
+    }
+
+    private void drawBossPresence(){
+        float pulse = 1f + Mathf.absin(7f, 3f);
+        Draw.z(Layer.playerName + 16f);
+        Draw.color(Pal.remove, 0.15f);
+        Fill.circle(guardian.x, guardian.y, guardian.hitSize * 1.5f + pulse * 3f);
+        Draw.color(Pal.remove);
+        Lines.stroke(3f);
+        Lines.circle(guardian.x, guardian.y, guardian.hitSize * 1.45f + pulse * 3f);
+        Lines.circle(guardian.x, guardian.y, guardian.hitSize * 1.9f + pulse * 4f);
+        Fonts.outline.draw("⚠ BOSS · " + bossName() + " · " + (int)guardian.health + "/" + (int)guardian.maxHealth,
+            guardian.x, guardian.y + guardian.hitSize + 26f, Pal.remove, 0.5f, false, Align.center);
+        Drawf.light(guardian.x, guardian.y, guardian.hitSize * 4f, Pal.remove, 0.65f);
+        if(bossSignal > 0f){
+            Draw.color(Pal.remove, bossSignal / (60f * 4f));
+            Lines.circle(guardian.x, guardian.y, guardian.hitSize * (2.2f + bossSignal / 45f));
+        }
+        Draw.reset();
+    }
+
     private void drawHealthBar(Unit unit, Color color, float width){
         float ratio = Mathf.clamp(unit.health / Math.max(1f, unit.maxHealth));
         float shield = Mathf.clamp(unit.shield / Math.max(1f, unit.maxHealth));
@@ -597,6 +682,9 @@ public class PinyinEscapeScene{
         for(PinyinWorldQuestion question : worldQuestions) question.clear();
         bossSpawned = campActive = false;
         guardian = null;
+        bossSignal = 0f;
+        sideEvent.reset();
+        sideEventCooldown = 60f * 12f;
         chestCooldown[0] = chestCooldown[1] = 60f * 2f;
         spawnTimer = 60f * 8f;
     }
@@ -615,16 +703,18 @@ public class PinyinEscapeScene{
                 Vec2 option = board.positions[i];
                 boolean hint = board.secondsLeft() <= 2.5f && board.choices[i] == 0;
                 Color optionColor = hint ? Pal.heal : playerColor;
-                Draw.z(Layer.playerName + 3f);
-                Draw.color(optionColor, hint ? 0.48f : 0.35f);
-                Fill.circle(option.x, option.y, 11f);
+                Draw.z(Layer.playerName + 18f);
+                float blink = 0.72f + Mathf.absin(6f, 0.28f);
+                Draw.color(optionColor, (hint ? 0.55f : 0.32f) * blink);
+                Fill.circle(option.x, option.y, 13f + Mathf.absin(5f, 2f));
                 Draw.color(optionColor);
-                Lines.stroke(2f);
-                Lines.circle(option.x, option.y, 12f + Mathf.absin(5f, hint ? 3f : 1.5f));
+                Lines.stroke(2.5f);
+                Lines.circle(option.x, option.y, 15f + Mathf.absin(5f, hint ? 4f : 2.5f));
+                Lines.circle(option.x, option.y, 20f + Mathf.absin(4f, 2f));
                 Fonts.outline.draw(question.choices[board.choices[i]], option.x, option.y + 8f,
                     Color.white, 0.65f, false, Align.center);
                 if(hint) Fill.circle(option.x, option.y + 16f, 2.2f + Mathf.absin(4f, 1f));
-                Drawf.light(option.x, option.y, hint ? 65f : 45f, optionColor, hint ? 0.9f : 0.7f);
+                Drawf.light(option.x, option.y, hint ? 80f : 62f, optionColor, hint ? 1f : 0.85f);
             }
         }
         Draw.reset();
@@ -823,6 +913,7 @@ public class PinyinEscapeScene{
 
     private void update(){
         if(!active || !worldReady || !state.isPlaying() || player == null) return;
+        bossSignal = Math.max(0f, bossSignal - Time.delta);
         var core = Team.sharded.core();
         if(core != null) core.items.set(Items.copper, supplies);
         for(int i = 0; i < playerEffects.length; i++){
@@ -853,7 +944,7 @@ public class PinyinEscapeScene{
         }
         int before = lives.remaining();
         lives.update(alive(firstPlayer), alive(partner), Time.delta);
-        if(lives.ended()){
+        if(lives.ended() && lives.remaining() == 0){
             finish(Core.bundle.get(lives.remaining() == 0 ? "pinyin.world.noLives" : "pinyin.world.teamLost"));
             return;
         }
@@ -862,7 +953,7 @@ public class PinyinEscapeScene{
             ui.showInfoToast(Core.bundle.format(key, lives.remaining()), 2f);
         }
         for(int i = 0; i < 2; i++){
-            if(lives.ready(i)) revive(i);
+            if(lives.ready(i) || lives.respawnReady(i)) revive(i);
         }
 
         boolean wasReady = adventure.ready();
@@ -871,6 +962,7 @@ public class PinyinEscapeScene{
             if(!alive(enemy)){
                 if(!(enemy.controller() instanceof PinyinEnemyController ai) || !ai.selfDestructed){
                     adventure.defeat(enemy == guardian);
+                    sideEvent.defeated();
                     floating(enemy.x, enemy.y, Core.bundle.get("pinyin.adventure.defeated"), Pal.accent);
                     if(drops.size < 100) drops.add(new SupplyDrop(enemy.x, enemy.y, enemy == guardian ? 7 : Mathf.random(8), enemy == guardian ? 60 : 8));
                 }
@@ -880,6 +972,7 @@ public class PinyinEscapeScene{
         allies.removeAll(unit -> !alive(unit));
         updateDrops();
         updateTurretPads();
+        updateSideEvent();
         for(int slot = 0; slot < 2; slot++){
             PinyinWorldQuestion board = worldQuestions[slot];
             Unit owner = slot == 0 ? firstPlayer : partner;
@@ -901,7 +994,12 @@ public class PinyinEscapeScene{
         if(adventure.stage() == 3 && adventure.answers() >= adventure.requiredAnswers() && !bossSpawned){
             guardian = spawnEnemy(PinyinEnemyController.bossKind(layout.themes[adventure.stage()], layout.bossRolls[adventure.stage()]), true);
             bossSpawned = guardian != null;
-            if(bossSpawned) ui.showInfoToast(Core.bundle.format("pinyin.adventure.bossArrived", bossName()), 3f);
+            if(bossSpawned){
+                bossSignal = 60f * 4f;
+                Fx.spawn.at(guardian);
+                Fx.blastExplosion.at(guardian);
+                ui.showInfoToast(Core.bundle.format("pinyin.adventure.bossArrived", bossName()), 3f);
+            }
         }
         if(!wasReady && adventure.ready()) ui.showInfoToast("@pinyin.adventure.exitReady", 3f);
         spawnTimer -= Time.delta;
@@ -959,10 +1057,12 @@ public class PinyinEscapeScene{
             energy[collector]++;
             pulseCharge[collector] = Math.min(ENERGY_NEEDED, pulseCharge[collector] + 1);
             adventure.answer();
+            sideEvent.answered();
             PinyinTeamEffects.Reward reward = bunkerRewards[index];
             PinyinArsenal.Kind weapon = bunkerWeapons[index];
             playerEffects[collector].correct(energy[collector], reward == PinyinTeamEffects.Reward.shield || Mathf.chance(0.35f),
                 alive(picker) ? picker : null, reward, weapon);
+            playerEffects[collector].refreshActiveBoosts();
             floating(picker.x, picker.y, Core.bundle.get("pinyin.reward." + reward.name()) + " "
                 + Core.bundle.get("pinyin.weapon." + playerEffects[collector].weaponKind().name()), Pal.heal);
             boolean combo = momentum[collector].correct();
@@ -1129,6 +1229,47 @@ public class PinyinEscapeScene{
             floating(unit.x, unit.y + 30f, Core.bundle.get("pinyin.adventure.supplyArrived"), Pal.accent);
         }
         Sounds.uiUnlock.play();
+    }
+
+    private void updateSideEvent(){
+        sideEventCooldown = Math.max(0f, sideEventCooldown - Time.delta);
+        Unit leader = alive(firstPlayer) ? firstPlayer : partner;
+        boolean inside = leader != null && leader.within(sideEventPoint.x, sideEventPoint.y,
+            tilesize * (sideEvent.kind() == PinyinAdventureEvents.Kind.rescue ? 8f : 5f));
+        sideEvent.update(Time.delta, inside);
+        if(sideEvent.consumeCompleted()){
+            supplies += 30 + adventure.difficulty() * 3;
+            for(int i = 0; i < 2; i++){
+                Unit unit = i == 0 ? firstPlayer : partner;
+                if(alive(unit)){
+                    unit.heal(35f);
+                    unit.shield += 45f;
+                    playerEffects[i].refreshActiveBoosts();
+                    Fx.heal.at(unit);
+                }
+            }
+            if(sideEvent.kind() == PinyinAdventureEvents.Kind.rhythm) for(PinyinTeamEffects effects : playerEffects) effects.refreshActiveBoosts();
+            floating(sideEventPoint.x, sideEventPoint.y, Core.bundle.get("pinyin.event.complete"), Pal.heal);
+            Fx.spawn.at(sideEventPoint.x, sideEventPoint.y);
+            Sounds.uiUnlock.play();
+            sideEventCooldown = 60f * (18f + Mathf.random(12f));
+        }else if(sideEvent.failed()){
+            floating(sideEventPoint.x, sideEventPoint.y, Core.bundle.get("pinyin.event.failed"), Pal.remove);
+            spawnMonster();
+            sideEvent.reset();
+            sideEventCooldown = 60f * 10f;
+        }else if(!sideEvent.active() && sideEventCooldown <= 0f && leader != null){
+            PinyinAdventureEvents.Kind kind = PinyinAdventureEvents.Kind.values()[Mathf.random(PinyinAdventureEvents.Kind.values().length - 1)];
+            sideEvent.start(kind, adventure.difficulty());
+            Point2 point = switch(kind){
+                case rescue -> layout.beacons[adventure.stage()];
+                case rhythm -> layout.chests[adventure.stage() * PinyinAdventureMap.chestsPerStage + Mathf.random(PinyinAdventureMap.chestsPerStage - 1)];
+                default -> layout.camps[adventure.stage()];
+            };
+            sideEventPoint.set(point.x * tilesize, point.y * tilesize);
+            floating(sideEventPoint.x, sideEventPoint.y, Core.bundle.get("pinyin.event.new") + " " + eventText(), Pal.accent);
+            Sounds.uiNotify.play();
+        }
     }
 
     private class PartnerController extends AIController{
