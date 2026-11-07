@@ -20,6 +20,7 @@ import mindustry.desktop.steam.*;
 import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
+import mindustry.input.*;
 import mindustry.mod.Mods.*;
 import mindustry.net.*;
 import mindustry.net.Net.*;
@@ -150,6 +151,24 @@ public class DesktopLauncher extends ClientLauncher{
 
     public DesktopLauncher(String[] args){
         this.args = args;
+        if(OS.isWindows){
+            Events.on(ClientLoadEvent.class, event -> {
+                try{
+                    WindowsPinyinGamepad gamepad = new WindowsPinyinGamepad();
+                    PinyinGamepad.reader = gamepad;
+                    Events.run(Trigger.update, () -> {
+                        PinyinGamepad.update();
+                        if((SDL.SDL_GetWindowFlags(((SdlApplication)Core.app).getWindow()) & SDL.SDL_WINDOW_INPUT_FOCUS) == 0) PinyinGamepad.state.clear();
+                    });
+                    Core.app.addListener(new ApplicationListener(){
+                        @Override
+                        public void dispose(){ gamepad.close(); PinyinGamepad.reader = null; }
+                    });
+                }catch(LinkageError | RuntimeException error){
+                    Log.warn("Gamepad initialization unavailable: @", error.getMessage());
+                }
+            });
+        }
 
         if(useDiscord){
             Runtime.getRuntime().addShutdownHook(new Thread(DiscordRPC::close));

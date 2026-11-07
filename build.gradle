@@ -259,6 +259,7 @@ project(":desktop"){
 
     dependencies{
         implementation project(":core")
+        implementation "net.java.dev.jna:jna:5.17.0"
         implementation arcModule("extensions:profiling")
         implementation arcModule("extensions:discord")
         implementation arcModule("natives:natives-filedialogs")
@@ -442,6 +443,7 @@ project(":tests"){
         testImplementation "org.junit.jupiter:junit-jupiter-api:5.7.1"
         testImplementation arcModule("backends:backend-headless")
         testImplementation "org.json:json:20230618"
+        testRuntimeOnly arcModule("natives:natives-freetype-desktop")
         testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.7.1"
         testRuntimeOnly "org.junit.platform:junit-platform-launcher"
     }

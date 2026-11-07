@@ -4,10 +4,12 @@ package mindustry.game;
 public class PinyinCoopLives{
     public static final int startingLives = 5;
     public static final float respawnDelay = 60f * 5f;
+    public static final float lifeInterval = 60f * 60f;
     private final boolean[] alive = new boolean[2];
     private final float[] countdown = new float[2];
     private int remaining;
     private boolean ended;
+    private float lifeClock;
 
     public PinyinCoopLives(){
         reset();
@@ -16,6 +18,7 @@ public class PinyinCoopLives{
     public void reset(){
         remaining = startingLives;
         ended = false;
+        lifeClock = 0f;
         for(int i = 0; i < 2; i++){
             alive[i] = true;
             countdown[i] = -1f;
@@ -24,6 +27,13 @@ public class PinyinCoopLives{
 
     public void update(boolean firstAlive, boolean secondAlive, float delta){
         if(ended) return;
+        if(delta > 0f && (firstAlive || secondAlive)){
+            lifeClock += delta;
+            while(lifeClock >= lifeInterval){
+                lifeClock -= lifeInterval;
+                remaining++;
+            }
+        }
         for(int i = 0; i < 2; i++){
             boolean present = i == 0 ? firstAlive : secondAlive;
             if(alive[i] && !present){
@@ -57,5 +67,15 @@ public class PinyinCoopLives{
 
     public boolean ended(){
         return ended;
+    }
+
+    /** Progress toward the next automatically earned life, useful for a small HUD meter. */
+    public float lifeProgress(){
+        return Math.min(1f, lifeClock / lifeInterval);
+    }
+
+    /** A rare pickup can grant a life without bypassing the game-over state. */
+    public void addLife(){
+        if(!ended) remaining++;
     }
 }

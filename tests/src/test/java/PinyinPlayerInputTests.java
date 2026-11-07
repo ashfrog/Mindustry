@@ -26,6 +26,8 @@ class PinyinPlayerInputTests{
         previousInput = Core.input;
         Core.input = input = new TestInput();
         Time.delta = 1f;
+        PinyinGamepad.reader = null;
+        PinyinGamepad.update();
         first = UnitTypes.alpha.create(Team.sharded);
         second = UnitTypes.alpha.create(Team.sharded);
     }
@@ -33,6 +35,8 @@ class PinyinPlayerInputTests{
     @AfterEach
     void restoreInput(){
         Core.input = previousInput;
+        PinyinGamepad.reader = null;
+        PinyinGamepad.update();
     }
 
     void update(boolean enabled){
@@ -87,6 +91,37 @@ class PinyinPlayerInputTests{
     }
 
     @Test
+    void upgradedHeldFireCreatesEveryProjectileForBothPlayers(){
+        mindustry.Vars.logic.reset();
+        mindustry.Vars.world.loadGenerator(40, 40, tiles -> tiles.fill());
+        mindustry.Vars.state.rules.unitCap = 20;
+        mindustry.Vars.state.rules.unitCapVariable = false;
+        first = UnitTypes.alpha.spawn(Team.sharded, 100, 100);
+        second = UnitTypes.alpha.spawn(Team.sharded, 120, 100);
+        PinyinTeamEffects effects = new PinyinTeamEffects();
+        PinyinTeamEffects other = new PinyinTeamEffects();
+        for(int i = 1; i <= 20; i++){
+            effects.correct(i, false, first, PinyinTeamEffects.Reward.multishot);
+            other.correct(i, false, second, PinyinTeamEffects.Reward.multishot);
+        }
+        assertEquals(43, effects.bulletsPerShot());
+        input.pressed.addAll(KeyCode.j, KeyCode.mouseLeft);
+        int bulletsBefore = Groups.bullet.size();
+        for(int tick = 0; tick < 30; tick++){
+            update(true);
+            for(Unit unit : new Unit[]{first, second}){
+                for(var mount : unit.mounts) mount.weapon.update(unit, mount);
+            }
+        }
+        assertTrue(shots(first) > 43 && shots(second) > 43);
+        assertEquals(0, shots(first) % 43);
+        assertEquals(0, shots(second) % 43);
+        assertEquals(shots(first) + shots(second), Groups.bullet.size() - bulletsBefore,
+            "Every upgraded pellet must become a real bullet in the world");
+        mindustry.Vars.logic.reset();
+    }
+
+    @Test
     void movementKeysDoNotMoveTheOtherPlayer(){
         input.pressed.addAll(KeyCode.w, KeyCode.d);
         update(true);
@@ -112,6 +147,72 @@ class PinyinPlayerInputTests{
         for(Unit unit : new Unit[]{first, second}){
             for(var mount : unit.mounts) assertFalse(mount.shoot);
         }
+    }
+
+    @Test
+    void gamepadMovesAimsAndContinuouslyFiresOnlyPlayerTwo(){
+        PinyinGamepad.reader = pad -> {
+            pad.move.set(1f, 0f);
+            pad.aim.set(0f, 1f);
+            pad.fire = true;
+            return true;
+        };
+        for(int tick = 0; tick < 120; tick++){
+            PinyinGamepad.update();
+            update(true);
+            for(var mount : second.mounts) mount.weapon.update(second, mount);
+        }
+        assertTrue(first.vel.isZero());
+        assertFalse(first.isShooting);
+        assertTrue(second.vel.x > 0f);
+        assertEquals(second.x, second.aimX, 0.01f);
+        assertTrue(second.aimY > second.y);
+        assertTrue(shots(second) > 4);
+        PinyinGamepad.reader = pad -> false;
+        PinyinGamepad.update();
+        second.vel.setZero();
+        update(true);
+        assertFalse(second.isShooting, "Disconnect must immediately release fire");
+        assertTrue(second.vel.isZero());
+        input.pressed.addAll(KeyCode.left, KeyCode.mouseLeft);
+        update(true);
+        assertTrue(second.isShooting, "Keyboard/mouse must still work after unplugging");
+        assertTrue(second.vel.x < 0f);
+    }
+
+    @Test
+    void padDeadzoneDashEdgesAndPausedInputsAreSafe(){
+        PinyinGamepad.reader = pad -> {
+            pad.move.set(0.1f, -0.1f);
+            pad.aim.set(-0.05f, 0.05f);
+            pad.dash = true;
+            pad.fire = true;
+            return true;
+        };
+        PinyinGamepad.update();
+        assertTrue(PinyinGamepad.state.move.isZero());
+        assertTrue(PinyinGamepad.state.aim.isZero());
+        assertTrue(PinyinGamepad.state.dashTap);
+        PinyinGamepad.update();
+        assertFalse(PinyinGamepad.state.dashTap, "Holding dash must not retrigger every frame");
+        update(false);
+        assertFalse(second.isShooting);
+        assertTrue(second.vel.isZero());
+        PinyinGamepad.reader = pad -> { pad.move.set(0.6f, 0f); return true; };
+        PinyinGamepad.update();
+        update(true);
+        assertTrue(second.vel.len() > 0f && second.vel.len() < second.speed(), "Analog movement must retain partial speed");
+    }
+
+    @Test
+    void mouseOverHudCannotFireButControllerStillCan(){
+        input.pressed.add(KeyCode.mouseLeft);
+        PinyinPlayerInput.update(second, true, null, true, false);
+        assertFalse(second.isShooting);
+        PinyinGamepad.reader = pad -> { pad.fire = true; return true; };
+        PinyinGamepad.update();
+        PinyinPlayerInput.update(second, true, null, true, false);
+        assertTrue(second.isShooting);
     }
 
     int shots(Unit unit){

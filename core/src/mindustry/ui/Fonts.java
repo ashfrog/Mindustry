@@ -35,6 +35,7 @@ public class Fonts{
     private static ObjectMap<String, TextureRegion> largeIcons = new ObjectMap<>();
 
     public static Font def, outline, icon, iconLarge, tech, logic, monospace;
+    private static Font pinyin, pinyinOutline;
 
     public static int getUnicode(String content){
         return unicodeIcons.get(content, 0);
@@ -64,6 +65,10 @@ public class Fonts{
     public static void loadFonts(){
         largeIcons.clear();
         FreeTypeFontParameter param = fontParameter();
+
+        Core.assets.load("pinyin", Font.class, new FreeTypeFontLoaderParameter("fonts/pinyin.ttf", fontParameter())).loaded = f -> pinyin = f;
+        // The main CJK font lacks Latin Extended-B vowels such as ǎ, ǐ, ǔ and ǜ.
+        param.fallback.add(() -> pinyin);
 
         Core.assets.load("default", Font.class, new FreeTypeFontLoaderParameter(mainFont, param)).loaded = f -> Fonts.def = f;
 
@@ -267,6 +272,13 @@ public class Fonts{
             incremental = true;
             size = 18;
         }};
+
+        Core.assets.load("pinyin-outline", Font.class, new FreeTypeFontLoaderParameter("fonts/pinyin.ttf", new FreeTypeFontParameter(){{
+            borderColor = Color.darkGray;
+            incremental = true;
+            size = 18;
+        }})).loaded = f -> pinyinOutline = f;
+        param.fallback.add(() -> pinyinOutline);
 
         Core.assets.load("outline", Font.class, new FreeTypeFontLoaderParameter(mainFont, param)).loaded = t -> Fonts.outline = t;
 

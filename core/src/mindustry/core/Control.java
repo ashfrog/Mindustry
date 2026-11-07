@@ -731,7 +731,8 @@ public class Control implements ApplicationListener, Loadable{
                 state.set(State.playing);
             }
 
-            if(!net.client() && Core.input.keyTap(Binding.pause) && !(state.isCampaign() && state.afterGameOver) && !renderer.isCutscene() && !scene.hasDialog() && !scene.hasKeyboard() && !ui.restart.isShown() && (state.is(State.paused) || state.is(State.playing))){
+            boolean escapeDashKey = ui.pinyinEscape != null && ui.pinyinEscape.isActive() && Binding.pause.value.key == KeyCode.space;
+            if(!escapeDashKey && !net.client() && Core.input.keyTap(Binding.pause) && !(state.isCampaign() && state.afterGameOver) && !renderer.isCutscene() && !scene.hasDialog() && !scene.hasKeyboard() && !ui.restart.isShown() && (state.is(State.paused) || state.is(State.playing))){
                 if(state.rules.pauseDisabled){
                     ui.hudfrag.showPauseDisabled();
                 }else{
