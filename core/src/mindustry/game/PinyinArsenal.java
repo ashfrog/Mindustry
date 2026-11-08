@@ -76,6 +76,8 @@ public class PinyinArsenal{
         bullet.spawnUnit = null;
         bullet.spawnBullets = new Seq<>();
         bullet.intervalBullet = null;
+        bullet.lightning = Math.min(bullet.lightning, 2);
+        if(bullet.pierce || bullet.pierceArmor) bullet.pierceCap = 3;
         bullet.splashDamage = source.splashDamage > 0f ? damage * 0.65f : 0f;
         bullet.splashDamageRadius = Math.min(source.splashDamageRadius, enemy ? 22f : 32f);
         bullet.lightningDamage = damage * 0.35f;
@@ -87,7 +89,7 @@ public class PinyinArsenal{
         if(bullet instanceof LiquidBulletType liquid) liquid.puddleSize = 0f;
         if(source.fragBullet != null){
             bullet.fragBullet = copy(source.fragBullet, damage * 0.22f, enemy);
-            bullet.fragBullets = Math.min(source.fragBullets, 4);
+            bullet.fragBullets = Math.min(source.fragBullets, 2);
         }
         if(source.lightningType != null && (source.lightning > 0 || source instanceof LightningBulletType)){
             bullet.lightningType = copy(source.lightningType, damage * 0.35f, enemy);

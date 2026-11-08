@@ -15,6 +15,7 @@ public class PinyinAdventureMap{
     public final Point2[] entrances = new Point2[stages], exits = new Point2[stages];
     public final Point2[] camps = new Point2[stages], beacons = new Point2[stages];
     public final Point2[] turretPads = new Point2[stages * padsPerStage];
+    public final Point2[] workshops = new Point2[stages], rescues = new Point2[stages * 2];
     public final int[] patterns = new int[stages], themes = {0, 1, 2, 3}, bossRolls = new int[stages], elevations = new int[stages];
     private final boolean[] open = new boolean[width * height];
 
@@ -35,6 +36,12 @@ public class PinyinAdventureMap{
             camps[stage] = new Point2(entrances[stage].x + (entrySide == 0 ? 2 : 0), entrances[stage].y);
             beacons[stage] = new Point2(left + random.random(27, stageWidth - 27), random.random(44, height - 44));
             Seq<Point2> occupied = Seq.with(camps[stage], beacons[stage], exits[stage]);
+            workshops[stage] = spacedPoint(left, occupied, random);
+            occupied.add(workshops[stage]);
+            for(int i = 0; i < 2; i++){
+                rescues[stage * 2 + i] = spacedPoint(left, occupied, random);
+                occupied.add(rescues[stage * 2 + i]);
+            }
             for(int i = 0; i < chestsPerStage; i++){
                 Point2 chest = spacedPoint(left, occupied, random);
                 chests[stage * chestsPerStage + i] = chest;
@@ -70,6 +77,7 @@ public class PinyinAdventureMap{
             for(int i = 0; i < 3; i++) connect(occupied.random(random), occupied.random(random), random);
             room(camps[stage].x, camps[stage].y, 9, 10);
             room(exits[stage].x, exits[stage].y, 8, 9);
+            room(workshops[stage].x, workshops[stage].y, 9, 9);
             for(int i = 0; i < padsPerStage; i++){
                 Point2 pad = i < 2 ? new Point2(camps[stage].x + 1, camps[stage].y + (i == 0 ? 4 : -4))
                     : spacedPoint(left, occupied, random);
@@ -175,6 +183,8 @@ public class PinyinAdventureMap{
         for(Point2 pad : turretPads) paint(tiles, pad, 2, (Floor)Blocks.metalFloor3);
         // Bunkers are drawn by the scene; floor markers do not block movement.
         for(Point2 chest : chests) paint(tiles, chest, 1, (Floor)Blocks.metalFloor4);
+        for(Point2 workshop : workshops) paint(tiles, workshop, 7, (Floor)Blocks.metalFloor3);
+        for(Point2 rescue : rescues) paint(tiles, rescue, 2, (Floor)Blocks.metalFloor5);
     }
 
     private void paint(Tiles tiles, Point2 center, int radius, Floor floor){

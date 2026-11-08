@@ -42,12 +42,13 @@ public class PinyinTeamEffects{
     }
 
     public float damageMultiplier(){
-        float base = power >= 0 ? 2f * (float)Math.pow(1f + power * 0.5f, 1.6f) : 2f / (1f - power * 0.3f);
-        return base * (1f + rewardCount(Reward.power) * 0.4f);
+        float base = power >= 0 ? 2f + power * 0.22f : 2f / (1f - power * 0.15f);
+        return Math.min(PinyinCombatBalance.maxDamageMultiplier, base + rewardCount(Reward.power) * 0.25f);
     }
 
     public int bulletsPerShot(){
-        return 3 + rewardCount(Reward.multishot) * 2 - (boosts.contains(boost -> boost.level < 0) ? 2 : 0);
+        int shots = 3 + Math.min(3, rewardCount(Reward.multishot)) * 2 - (boosts.contains(boost -> boost.level < 0) ? 2 : 0);
+        return PinyinCombatBalance.shots(weaponKind(), shots);
     }
 
     /** Time until the next positive layer expires; new answers do not refresh older layers. */
@@ -122,6 +123,16 @@ public class PinyinTeamEffects{
                 while(weapon == weaponKind()) weapon = PinyinArsenal.reward(random.random(1, PinyinArsenal.Kind.values().length - 1));
             }
         }
+        // At capacity the oldest layer is replaced, so a new weapon can still be chosen.
+        if(boosts.count(boost -> boost.level > 0) >= PinyinCombatBalance.maxBoosts){
+            for(int i = 0; i < boosts.size; i++) if(boosts.get(i).level > 0){
+                AnswerBoost old = boosts.remove(i);
+                power--;
+                expireShield(old, unit);
+                break;
+            }
+            if(unit != null && !unit.dead) unit.heal(20f);
+        }
         power++;
         AnswerBoost boost = new AnswerBoost(1, unit, (energy >= 3 ? 80f : 0f) + (reward == Reward.shield ? 120f : 0f), weapon, reward);
         boosts.add(boost);
@@ -130,12 +141,15 @@ public class PinyinTeamEffects{
         if(shieldReward || reward == Reward.shield) shieldedTime = 60f * 6f;
         if(unit != null && !unit.dead){
             inherit(unit);
-            unit.shield += boost.shield;
+            float added = Math.min(boost.shield, Math.max(0f, PinyinCombatBalance.maxShield - unit.shield));
+            unit.shield += added;
+            boost.shield = added;
         }
         return reward;
     }
 
     public void wrong(Unit unit){
+        if(power <= -PinyinCombatBalance.maxPenalties) return;
         power--;
         AnswerBoost removed = null;
         for(int i = boosts.size - 1; i >= 0; i--){
@@ -151,8 +165,9 @@ public class PinyinTeamEffects{
         shieldedTime = 60f * 6f;
         if(unit == null || unit.dead) return;
         unit.heal(40f);
-        unit.shield += 80f;
-        comboShield = unit == comboOwner ? comboShield + 80f : 80f;
+        float added = Math.min(80f, Math.max(0f, PinyinCombatBalance.maxShield - unit.shield));
+        unit.shield += added;
+        comboShield = unit == comboOwner ? comboShield + added : added;
         comboOwner = unit;
         comboShieldTime = 60f * 10f;
         inherit(unit);
@@ -167,24 +182,25 @@ public class PinyinTeamEffects{
             Weapon base = unit.type.weapons.get(i), weapon = base.copy();
             weapon.bullet = PinyinArsenal.create(weaponKind(), base.bullet.damage, false);
             weapon.shootSound = PinyinArsenal.sound(weaponKind());
-            float growth = (float)Math.log1p(Math.max(0, power));
+            float growth = (float)Math.log1p(Math.max(0, Math.min(PinyinCombatBalance.maxBoosts, power)));
             weapon.bullet.damage *= damageMultiplier();
             weapon.bullet.speed *= power >= 0 ? 1f + growth * 0.12f : 1f / (1f - power * 0.04f);
             weapon.reload *= 0.75f * (power >= 0 ? 1f / (1f + growth * 0.6f) : 1f - power * 0.2f);
             weapon.reload /= 1f + rewardCount(Reward.rapid) * 0.35f;
-            float giant = 1f + rewardCount(Reward.giant) * 0.45f;
-            weapon.bullet.knockback += rewardCount(Reward.giant) * 0.15f;
-            // Only multishot rewards add projectiles; their growth has no ceiling.
-            int shots = base.shoot.shots + bulletsPerShot() - 1;
+            float giant = 1f + Math.min(3, rewardCount(Reward.giant)) * 0.18f;
+            weapon.bullet.knockback = Math.min(1.2f, weapon.bullet.knockback + Math.min(3, rewardCount(Reward.giant)) * 0.1f);
+            // Bound the actual native gun, including beam and fragmentation families.
+            int shots = bulletsPerShot();
+            weapon.reload = Math.max(weapon.bullet instanceof LaserBulletType || weapon.bullet instanceof LightningBulletType ? 35f : 18f, weapon.reload);
             weapon.shoot = new ShootSpread(shots, 45f / shots);
             if(weapon.bullet instanceof BasicBulletType basic){
                 float size = power >= 0 ? 1.35f + growth * 0.75f : 1.35f / (1f - power * 0.08f);
-                basic.width *= size * giant;
-                basic.height *= size * giant;
+                basic.width *= Math.min(2.2f, size * giant);
+                basic.height *= Math.min(2.2f, size * giant);
             }
-            if(weapon.bullet instanceof LaserBulletType laser) laser.width *= (1f + growth * 0.25f) * giant;
-            if(weapon.bullet instanceof ShrapnelBulletType scatter) scatter.width *= (1f + growth * 0.25f) * giant;
-            if(weapon.bullet instanceof LiquidBulletType liquid) liquid.orbSize *= (1f + growth * 0.2f) * giant;
+            if(weapon.bullet instanceof LaserBulletType laser) laser.width *= Math.min(1.8f, (1f + growth * 0.25f) * giant);
+            if(weapon.bullet instanceof ShrapnelBulletType scatter) scatter.width *= Math.min(1.8f, (1f + growth * 0.25f) * giant);
+            if(weapon.bullet instanceof LiquidBulletType liquid) liquid.orbSize *= Math.min(1.8f, (1f + growth * 0.2f) * giant);
             if(rewardCount(Reward.rainbow) > 0){
                 weapon.bullet.homingPower = Math.max(weapon.bullet.homingPower, 0.04f);
                 weapon.bullet.homingRange = Math.max(weapon.bullet.homingRange, 160f);
@@ -239,7 +255,7 @@ public class PinyinTeamEffects{
         final Unit owner;
         final PinyinArsenal.Kind weapon;
         final Reward reward;
-        final float shield;
+        float shield;
         float remaining = boostDuration;
 
         AnswerBoost(int level, Unit owner, float shield, PinyinArsenal.Kind weapon, Reward reward){

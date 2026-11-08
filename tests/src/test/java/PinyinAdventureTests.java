@@ -24,6 +24,8 @@ class PinyinAdventureTests{
                 boolean[] visited = reachable(map, stage, false);
                 assertTrue(visited[index(map.exits[stage])], "Unreachable exit, seed " + seed);
                 assertTrue(visited[index(map.beacons[stage])], "Unreachable beacon, seed " + seed);
+                assertTrue(visited[index(map.workshops[stage])], "Unreachable workshop, seed " + seed);
+                for(int i = stage * 2; i < stage * 2 + 2; i++) assertTrue(visited[index(map.rescues[i])], "Unreachable helper rescue");
                 int start = stage * PinyinAdventureMap.chestsPerStage;
                 for(int i = start; i < start + PinyinAdventureMap.chestsPerStage; i++) assertTrue(visited[index(map.chests[i])], "Unreachable chest, seed " + seed);
                 for(int i = stage * PinyinAdventureMap.padsPerStage; i < (stage + 1) * PinyinAdventureMap.padsPerStage; i++){
@@ -39,6 +41,8 @@ class PinyinAdventureTests{
             logic.reset();
             PinyinAdventureMap map = new PinyinAdventureMap(seed);
             world.loadGenerator(PinyinAdventureMap.width, PinyinAdventureMap.height, map::generate);
+            state.rules.unitCap = 50;
+            state.rules.unitCapVariable = false;
             assertNotNull(Team.sharded.core());
             for(int i = 0; i < map.turretPads.length; i++){
                 Point2 pad = map.turretPads[i];
@@ -46,9 +50,21 @@ class PinyinAdventureTests{
                 world.tile(pad.x, pad.y).setBlock(PinyinTurretPads.turret(i), Team.sharded, 0);
             }
             for(int stage = 0; stage < 4; stage++){
+                Point2 workshop = map.workshops[stage];
+                var operator = UnitTypes.alpha.spawn(Team.sharded, workshop.x * tilesize, workshop.y * tilesize);
+                operator.isShooting = true;
+                PinyinStageWorks works = new PinyinStageWorks();
+                works.reset(stage, 1, workshop);
+                works.update(60f, 100, operator, null);
+                assertTrue(works.activated());
+                operator.remove();
+            }
+            for(int stage = 0; stage < 4; stage++){
                 boolean[] visited = reachable(map, stage, true);
                 assertTrue(visited[index(map.exits[stage])]);
                 assertTrue(visited[index(map.beacons[stage])]);
+                assertTrue(visited[index(map.workshops[stage])], "Workshop entrance must remain open after construction");
+                for(int i = stage * 2; i < stage * 2 + 2; i++) assertTrue(visited[index(map.rescues[i])]);
                 int start = stage * PinyinAdventureMap.chestsPerStage;
                 for(int i = start; i < start + PinyinAdventureMap.chestsPerStage; i++){
                     Point2 chest = map.chests[i];
@@ -146,6 +162,9 @@ class PinyinAdventureTests{
             assertTrue(progress.waveSize() >= size);
             assertTrue(progress.enemyLimit() >= limit);
             assertTrue(progress.waveInterval() <= interval);
+            assertTrue(progress.waveSize() <= 10);
+            assertTrue(progress.enemyLimit() <= PinyinCombatBalance.maxEnemies);
+            assertTrue(progress.waveInterval() >= 60f * 5f);
         }
         assertTrue(progress.waveSize() > firstSize);
         assertTrue(progress.enemyLimit() > firstLimit);

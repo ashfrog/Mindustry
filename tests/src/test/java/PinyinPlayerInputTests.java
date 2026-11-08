@@ -104,7 +104,8 @@ class PinyinPlayerInputTests{
             effects.correct(i, false, first, PinyinTeamEffects.Reward.multishot);
             other.correct(i, false, second, PinyinTeamEffects.Reward.multishot);
         }
-        assertEquals(43, effects.bulletsPerShot());
+        int pellets = PinyinCombatBalance.maxShots;
+        assertEquals(pellets, effects.bulletsPerShot());
         input.pressed.addAll(KeyCode.j, KeyCode.mouseLeft);
         int bulletsBefore = Groups.bullet.size();
         for(int tick = 0; tick < 30; tick++){
@@ -113,9 +114,9 @@ class PinyinPlayerInputTests{
                 for(var mount : unit.mounts) mount.weapon.update(unit, mount);
             }
         }
-        assertTrue(shots(first) > 43 && shots(second) > 43);
-        assertEquals(0, shots(first) % 43);
-        assertEquals(0, shots(second) % 43);
+        assertTrue(shots(first) > pellets && shots(second) > pellets);
+        assertEquals(0, shots(first) % pellets);
+        assertEquals(0, shots(second) % pellets);
         assertEquals(shots(first) + shots(second), Groups.bullet.size() - bulletsBefore,
             "Every upgraded pellet must become a real bullet in the world");
         mindustry.Vars.logic.reset();

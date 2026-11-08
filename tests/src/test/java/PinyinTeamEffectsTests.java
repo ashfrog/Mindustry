@@ -118,29 +118,31 @@ class PinyinTeamEffectsTests{
     }
 
     @Test
-    void everyCorrectAnswerKeepsImprovingBothPlayersFarBeyondOldCeiling(){
+    void thousandAnswersStayBoundedAndStillRefreshAndHealAtCapacity(){
         PinyinTeamEffects effects = new PinyinTeamEffects();
-        Unit first = player(), second = player();
-        float damage = first.mounts[0].weapon.bullet.damage, reload = first.mounts[0].weapon.reload;
-        float width = ((BasicBulletType)first.mounts[0].weapon.bullet).width;
-        PinyinTeamEffects other = new PinyinTeamEffects();
+        Unit unit = player();
         for(int i = 1; i <= 1000; i++){
-            effects.correct(i, false, first, PinyinTeamEffects.Reward.multishot);
-            other.correct(i, false, second, PinyinTeamEffects.Reward.multishot);
-            var weapon = first.mounts[0].weapon;
-            assertTrue(weapon.bullet.damage > damage, "Every answer must increase damage");
-            assertTrue(weapon.reload < reload, "Every answer must improve firing speed");
-            assertTrue(((BasicBulletType)weapon.bullet).width > width);
-            assertEquals(weapon.bullet.damage, second.mounts[0].weapon.bullet.damage);
-            assertEquals(3 + 2 * i, effects.bulletsPerShot());
-            assertEquals(first.type.weapons.first().shoot.shots + 2 + 2 * i, weapon.shoot.shots);
-            assertEquals(weapon.shoot.shots, second.mounts[0].weapon.shoot.shots);
-            damage = weapon.bullet.damage;
-            reload = weapon.reload;
-            width = ((BasicBulletType)weapon.bullet).width;
+            effects.correct(i, false, unit, PinyinTeamEffects.Reward.multishot);
+            effects.refreshActiveBoosts();
+            assertTrue(effects.power() <= PinyinCombatBalance.maxBoosts);
+            assertTrue(unit.mounts[0].weapon.shoot.shots <= PinyinCombatBalance.maxShots);
+            assertTrue(unit.mounts[0].weapon.reload >= 18f);
+            assertTrue(effects.damageMultiplier() <= PinyinCombatBalance.maxDamageMultiplier);
+            assertTrue(unit.shield <= PinyinCombatBalance.maxShield);
+            assertTrue(((BasicBulletType)unit.mounts[0].weapon.bullet).width <= ((BasicBulletType)UnitTypes.alpha.weapons.first().bullet).width * 2.2f);
         }
-        assertEquals(1000, effects.power());
-        assertTrue(first.shield > 300f, "Rewards cannot reduce an already large shield");
+        assertEquals(PinyinCombatBalance.maxBoosts, effects.power());
+        assertEquals(9, effects.bulletsPerShot());
+        effects.update(60f * 40f, unit);
+        unit.health = 30f;
+        effects.correct(1001, false, unit, PinyinTeamEffects.Reward.multishot);
+        effects.refreshActiveBoosts();
+        assertEquals(50f, unit.health);
+        assertEquals(45, effects.secondsLeft());
+        Unit revived = player();
+        effects.inherit(revived);
+        assertEquals(unit.mounts[0].weapon.bullet.damage, revived.mounts[0].weapon.bullet.damage);
+        assertEquals(unit.mounts[0].weapon.shoot.shots, revived.mounts[0].weapon.shoot.shots);
     }
 
     @Test
@@ -153,14 +155,14 @@ class PinyinTeamEffectsTests{
         float damage = first.mounts[0].weapon.bullet.damage;
         for(int i = 1; i <= 10; i++){
             effects.wrong(first);
-            assertEquals(-i, effects.power());
-            assertTrue(first.mounts[0].weapon.bullet.damage < damage);
+            assertEquals(-Math.min(i, PinyinCombatBalance.maxPenalties), effects.power());
+            assertTrue(first.mounts[0].weapon.bullet.damage <= damage);
             assertEquals(UnitTypes.alpha.weapons.first().bullet.damage * 2f, second.mounts[0].weapon.bullet.damage);
             damage = first.mounts[0].weapon.bullet.damage;
         }
         assertEquals(10000f, first.health);
         effects.correct(1, false, first, PinyinTeamEffects.Reward.multishot);
-        assertEquals(-9, effects.power());
+        assertEquals(-3, effects.power());
         assertEquals(3, effects.bulletsPerShot(), "A correct pickup must add two bullets even after heavy penalties");
         assertTrue(first.mounts[0].weapon.bullet.damage > damage, "A correct answer must help even while weakened");
     }
@@ -172,17 +174,17 @@ class PinyinTeamEffectsTests{
         PinyinTeamEffects teammate = new PinyinTeamEffects();
         teammate.inherit(second);
         for(int i = 1; i <= 5; i++) effects.correct(i, false, first, PinyinTeamEffects.Reward.multishot);
-        assertEquals(13, effects.bulletsPerShot());
+        assertEquals(9, effects.bulletsPerShot());
         float damage = first.mounts[0].weapon.bullet.damage;
         effects.correct(6, false, first, PinyinTeamEffects.Reward.multishot);
-        assertEquals(15, effects.bulletsPerShot());
+        assertEquals(9, effects.bulletsPerShot());
         effects.wrong(first);
-        assertEquals(13, effects.bulletsPerShot());
+        assertEquals(9, effects.bulletsPerShot());
         assertEquals(5, effects.power());
         assertEquals(damage, first.mounts[0].weapon.bullet.damage);
         Unit revived = player();
         effects.inherit(revived);
-        assertEquals(13, revived.mounts[0].weapon.shoot.shots);
+        assertEquals(9, revived.mounts[0].weapon.shoot.shots);
         assertEquals(first.mounts[0].weapon.shoot.shots, revived.mounts[0].weapon.shoot.shots);
         assertEquals(first.mounts[0].weapon.bullet.damage, revived.mounts[0].weapon.bullet.damage);
         assertEquals(0, teammate.power(), "A player who has not answered must gain no upgrades");

@@ -85,7 +85,8 @@ class PinyinArsenalTests{
             var reward = effects.correct(i, false, first);
             rewards.add(reward);
             if(reward == PinyinTeamEffects.Reward.multishot) multishots++;
-            assertEquals(3 + multishots * 2, effects.bulletsPerShot());
+            assertTrue(effects.bulletsPerShot() >= 1 && effects.bulletsPerShot() <= PinyinCombatBalance.maxShots);
+            assertTrue(effects.power() <= PinyinCombatBalance.maxBoosts);
             assertEquals(effects.bulletsPerShot(), first.mounts[0].weapon.shoot.shots);
         }
         assertEquals(PinyinTeamEffects.Reward.values().length, rewards.size());

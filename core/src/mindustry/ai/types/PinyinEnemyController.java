@@ -42,8 +42,8 @@ public class PinyinEnemyController extends AIController{
     public PinyinEnemyController(Kind kind, Func<Unit, Unit> findPlayer, int difficulty){
         this.kind = kind;
         this.findPlayer = findPlayer;
-        this.difficulty = Math.max(1, difficulty);
-        attackScale = 1f + (this.difficulty - 1) * 0.16f;
+        this.difficulty = PinyinCombatBalance.difficulty(difficulty);
+        attackScale = PinyinCombatBalance.enemyDamageScale(difficulty);
     }
 
     public static Kind regularKind(int index, int difficulty){
@@ -129,8 +129,8 @@ public class PinyinEnemyController extends AIController{
     }
 
     public static void equip(Unit unit, Kind kind, int difficulty){
-        float tier = Math.max(0, difficulty - 1), scale = 1f + tier * 0.16f;
-        float healthScale = 1f + tier * 0.4f + tier * tier * 0.055f;
+        float tier = PinyinCombatBalance.difficulty(difficulty) - 1, scale = PinyinCombatBalance.enemyDamageScale(difficulty);
+        float healthScale = PinyinCombatBalance.enemyHealthScale(difficulty);
         float bossHealth = kind == Kind.siege ? 6800f : kind == Kind.ram ? 5200f : 4200f;
         unit.maxHealth = unit.health = (boss(kind) ? bossHealth : kind == Kind.flame || kind == Kind.artillery ? 220f : 130f) * healthScale;
         unit.armor = boss(kind) ? 4f + tier * 0.35f : 0f;
@@ -228,7 +228,7 @@ public class PinyinEnemyController extends AIController{
             boolean enraged = unit.health < unit.maxHealth / 2f;
             radialTimer = Math.max(kind == Kind.storm ? 35f : 60f,
                 (kind == Kind.storm ? (enraged ? 40f : 65f) : enraged ? 110f : 180f) / (1f + (difficulty - 1) * 0.08f));
-            int count = Math.min(36, 12 + (difficulty - 1) * 2);
+            int count = Math.min(20, 12 + (difficulty - 1));
             barrage++;
             if(kind == Kind.frost && barrage % 2 == 1){
                 // Aimed frost fan alternates with an expanding ring; all shots can be dodged.

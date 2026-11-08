@@ -22,9 +22,9 @@ public class PinyinAdventureProgress{
     public int stage(){ return stage; }
     public int chapter(){ return chapter; }
     public int difficulty(){ return (chapter - 1) * PinyinAdventureMap.stages + stage + 1; }
-    public int waveSize(){ return Math.min(40, 4 + difficulty()); }
-    public int enemyLimit(){ return Math.min(300, 36 + difficulty() * 8); }
-    public float waveInterval(){ return 60f * Math.max(2.5f, 6f / (1f + (difficulty() - 1) * 0.14f)); }
+    public int waveSize(){ return Math.min(10, 4 + difficulty()); }
+    public int enemyLimit(){ return Math.min(PinyinCombatBalance.maxEnemies, 24 + difficulty() * 2); }
+    public float waveInterval(){ return 60f * Math.max(5f, 8f / (1f + (PinyinCombatBalance.difficulty(difficulty()) - 1) * 0.06f)); }
     public int answers(){ return answers; }
     public int kills(){ return kills; }
     public int requiredAnswers(){ return stage == 0 ? 3 : 4; }
