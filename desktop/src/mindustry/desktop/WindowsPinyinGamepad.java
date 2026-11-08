@@ -70,8 +70,10 @@ public class WindowsPinyinGamepad implements PinyinGamepad.Reader, AutoCloseable
         state.aim.set(signed(xbox.getShort(12)), signed(xbox.getShort(14)));
         if((buttons & 15) != 0) state.move.set(((buttons & 8) != 0 ? 1 : 0) - ((buttons & 4) != 0 ? 1 : 0),
             ((buttons & 1) != 0 ? 1 : 0) - ((buttons & 2) != 0 ? 1 : 0));
-        state.fire = (buttons & (0x1000 | 0x4000 | 0x200)) != 0 || Byte.toUnsignedInt(xbox.getByte(7)) > 40;
+        state.fire = (buttons & (0x1000 | 0x200)) != 0 || Byte.toUnsignedInt(xbox.getByte(7)) > 40;
         state.dash = (buttons & (0x2000 | 0x100)) != 0;
+        state.prank = (buttons & 0x4000) != 0; // X
+        state.ultimate = (buttons & 0x8000) != 0; // Y
         state.name = "XInput";
         return true;
     }
@@ -89,8 +91,10 @@ public class WindowsPinyinGamepad implements PinyinGamepad.Reader, AutoCloseable
             state.move.set((float)Math.sin(angle), (float)Math.cos(angle));
         }
         int buttons = joystick.getInt(32);
-        state.fire = (buttons & (1 | 4 | 32 | 128)) != 0;
-        state.dash = (buttons & (2 | 8 | 16)) != 0;
+        state.fire = (buttons & (1 | 32 | 128)) != 0;
+        state.dash = (buttons & (2 | 16)) != 0;
+        state.prank = (buttons & 4) != 0; // Button 3 / X
+        state.ultimate = (buttons & 8) != 0; // Button 4 / Y
         state.name = name;
         return true;
     }

@@ -20,6 +20,12 @@ public class PinyinTeamEffects{
     public static final float boostDuration = 60f * 45f;
     private int power;
     private final Seq<AnswerBoost> boosts = new Seq<>();
+    private boolean positiveBoostsPermanent;
+    private boolean endlessGrowth;
+    private int endlessPower;
+    private final int[] endlessRewards = new int[Reward.values().length];
+    private Reward latestEndlessReward = Reward.power;
+    private PinyinArsenal.Kind endlessWeapon = PinyinArsenal.Kind.rapid;
     private float fastTime, overclockTime, shieldedTime;
     private float comboShieldTime, comboShield;
     private Unit comboOwner;
@@ -29,30 +35,52 @@ public class PinyinTeamEffects{
         boosts.clear();
         comboShieldTime = comboShield = 0f;
         comboOwner = null;
+        positiveBoostsPermanent = false;
+        endlessGrowth = false;
+        endlessPower = 0;
+        java.util.Arrays.fill(endlessRewards, 0);
+        endlessWeapon = PinyinArsenal.Kind.rapid;
+        latestEndlessReward = Reward.power;
         fastTime = overclockTime = shieldedTime = 0f;
     }
 
     public int power(){
-        return power;
+        return endlessGrowth ? endlessPower : power;
+    }
+
+    /** Aggregate counters keep unlimited survival upgrades without an ever-growing boost list. */
+    public void enableEndlessGrowth(){ endlessGrowth = true; }
+    public boolean endlessGrowth(){ return endlessGrowth; }
+
+    public boolean positiveBoostsPermanent(){
+        return positiveBoostsPermanent;
     }
 
     public PinyinArsenal.Kind weaponKind(){
+        if(endlessGrowth) return endlessWeapon;
         for(int i = boosts.size - 1; i >= 0; i--) if(boosts.get(i).level > 0 && (boosts.get(i).reward == Reward.arsenal || boosts.get(i).reward == Reward.wobble)) return boosts.get(i).weapon;
         return PinyinArsenal.Kind.rapid;
     }
 
     public float damageMultiplier(){
+        if(endlessGrowth){
+            if(endlessPower < 0) return 2f / (1f - endlessPower * 0.15f);
+            return 2f + endlessPower * 0.18f + (float)Math.sqrt(endlessPower) * 0.3f
+                + rewardCount(Reward.power) * 0.12f;
+        }
         float base = power >= 0 ? 2f + power * 0.22f : 2f / (1f - power * 0.15f);
         return Math.min(PinyinCombatBalance.maxDamageMultiplier, base + rewardCount(Reward.power) * 0.25f);
     }
 
     public int bulletsPerShot(){
-        int shots = 3 + Math.min(3, rewardCount(Reward.multishot)) * 2 - (boosts.contains(boost -> boost.level < 0) ? 2 : 0);
+        int shots = 3 + Math.min(3, rewardCount(Reward.multishot)) * 2
+            - (endlessGrowth ? endlessPower < 0 ? 2 : 0 : boosts.contains(boost -> boost.level < 0) ? 2 : 0);
         return PinyinCombatBalance.shots(weaponKind(), shots);
     }
 
     /** Time until the next positive layer expires; new answers do not refresh older layers. */
     public int secondsLeft(){
+        if(endlessGrowth) return 0;
         float remaining = Float.MAX_VALUE;
         for(AnswerBoost boost : boosts) if(boost.level > 0) remaining = Math.min(remaining, boost.remaining);
         return remaining == Float.MAX_VALUE ? 0 : (int)Math.ceil(remaining / 60f);
@@ -79,6 +107,12 @@ public class PinyinTeamEffects{
         for(AnswerBoost boost : boosts) if(boost.level > 0) boost.remaining = Math.max(boost.remaining, boostDuration);
     }
 
+    /** Adventure mode keeps rescue growth until an explicit wrong answer removes a layer. */
+    public void makePositiveBoostsPermanent(){
+        positiveBoostsPermanent = true;
+        refreshActiveBoosts();
+    }
+
     public void update(float delta){ update(delta, null); }
 
     public void update(float delta, Unit unit){
@@ -86,6 +120,7 @@ public class PinyinTeamEffects{
         boolean expired = false;
         for(int i = boosts.size - 1; i >= 0; i--){
             AnswerBoost boost = boosts.get(i);
+            if(boost.level > 0 && positiveBoostsPermanent) continue;
             boost.remaining -= delta;
             if(boost.remaining <= 0f){
                 expired = true;
@@ -104,7 +139,9 @@ public class PinyinTeamEffects{
         if(expired && unit != null && !unit.dead) inherit(unit);
     }
 
-    private int rewardCount(Reward reward){ return boosts.count(boost -> boost.level > 0 && boost.reward == reward); }
+    private int rewardCount(Reward reward){
+        return endlessGrowth ? endlessRewards[reward.ordinal()] : boosts.count(boost -> boost.level > 0 && boost.reward == reward);
+    }
 
     public Reward correct(int energy, boolean shieldReward, Unit unit){
         return correct(energy, shieldReward, unit, Reward.values()[random.random(Reward.values().length - 1)]);
@@ -122,6 +159,17 @@ public class PinyinTeamEffects{
             if(forcedWeapon == null){
                 while(weapon == weaponKind()) weapon = PinyinArsenal.reward(random.random(1, PinyinArsenal.Kind.values().length - 1));
             }
+        }
+        if(endlessGrowth){
+            endlessPower++;
+            endlessRewards[reward.ordinal()]++;
+            latestEndlessReward = reward;
+            if(reward == Reward.arsenal || reward == Reward.wobble) endlessWeapon = weapon;
+            if(unit != null && !unit.dead){
+                if(shieldReward || reward == Reward.shield) unit.shield = Math.min(PinyinCombatBalance.maxShield, unit.shield + 40f);
+                inherit(unit);
+            }
+            return reward;
         }
         // At capacity the oldest layer is replaced, so a new weapon can still be chosen.
         if(boosts.count(boost -> boost.level > 0) >= PinyinCombatBalance.maxBoosts){
@@ -149,6 +197,17 @@ public class PinyinTeamEffects{
     }
 
     public void wrong(Unit unit){
+        if(endlessGrowth){
+            if(endlessPower <= -PinyinCombatBalance.maxPenalties) return;
+            endlessPower--;
+            int index = latestEndlessReward.ordinal();
+            if(endlessRewards[index] == 0){
+                for(int i = 0; i < endlessRewards.length; i++) if(endlessRewards[i] > 0){ index = i; break; }
+            }
+            if(endlessRewards[index] > 0) endlessRewards[index]--;
+            if(unit != null && !unit.dead) inherit(unit);
+            return;
+        }
         if(power <= -PinyinCombatBalance.maxPenalties) return;
         power--;
         AnswerBoost removed = null;
@@ -179,13 +238,15 @@ public class PinyinTeamEffects{
         if(shieldedTime > 0f) unit.apply(StatusEffects.shielded, shieldedTime);
         for(int i = 0; i < unit.mounts.length; i++){
             var previous = unit.mounts[i];
-            Weapon base = unit.type.weapons.get(i), weapon = base.copy();
+            Weapon base = i < unit.type.weapons.size ? unit.type.weapons.get(i) : UnitTypes.alpha.weapons.first();
+            Weapon weapon = base.copy();
             weapon.bullet = PinyinArsenal.create(weaponKind(), base.bullet.damage, false);
             weapon.shootSound = PinyinArsenal.sound(weaponKind());
-            float growth = (float)Math.log1p(Math.max(0, Math.min(PinyinCombatBalance.maxBoosts, power)));
+            int level = power();
+            float growth = (float)Math.log1p(Math.max(0, endlessGrowth ? level : Math.min(PinyinCombatBalance.maxBoosts, level)));
             weapon.bullet.damage *= damageMultiplier();
-            weapon.bullet.speed *= power >= 0 ? 1f + growth * 0.12f : 1f / (1f - power * 0.04f);
-            weapon.reload *= 0.75f * (power >= 0 ? 1f / (1f + growth * 0.6f) : 1f - power * 0.2f);
+            weapon.bullet.speed *= level >= 0 ? 1f + Math.min(5f, growth) * 0.12f : 1f / (1f - level * 0.04f);
+            weapon.reload *= 0.75f * (level >= 0 ? 1f / (1f + growth * 0.6f) : 1f - level * 0.2f);
             weapon.reload /= 1f + rewardCount(Reward.rapid) * 0.35f;
             float giant = 1f + Math.min(3, rewardCount(Reward.giant)) * 0.18f;
             weapon.bullet.knockback = Math.min(1.2f, weapon.bullet.knockback + Math.min(3, rewardCount(Reward.giant)) * 0.1f);
@@ -193,8 +254,11 @@ public class PinyinTeamEffects{
             int shots = bulletsPerShot();
             weapon.reload = Math.max(weapon.bullet instanceof LaserBulletType || weapon.bullet instanceof LightningBulletType ? 35f : 18f, weapon.reload);
             weapon.shoot = new ShootSpread(shots, 45f / shots);
+            if(endlessGrowth && weapon.bullet.pierce){
+                weapon.bullet.pierceCap = 3 + (int)Math.sqrt(Math.max(0, level));
+            }
             if(weapon.bullet instanceof BasicBulletType basic){
-                float size = power >= 0 ? 1.35f + growth * 0.75f : 1.35f / (1f - power * 0.08f);
+                float size = level >= 0 ? 1.35f + growth * 0.75f : 1.35f / (1f - level * 0.08f);
                 basic.width *= Math.min(2.2f, size * giant);
                 basic.height *= Math.min(2.2f, size * giant);
             }

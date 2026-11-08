@@ -34,6 +34,18 @@ class PinyinTeamEffectsTests{
     }
 
     @Test
+    void adventureRescueGrowthDoesNotExpireWhenThePlayerStopsAnswering(){
+        PinyinTeamEffects effects = new PinyinTeamEffects();
+        Unit unit = player();
+        effects.correct(1, false, unit, PinyinTeamEffects.Reward.power);
+        effects.makePositiveBoostsPermanent();
+        int power = effects.power();
+        effects.update(PinyinTeamEffects.boostDuration * 20f, unit);
+        assertEquals(power, effects.power());
+        assertTrue(effects.damageMultiplier() > 2f);
+    }
+
+    @Test
     void eachPlayerCanUpgradeTheirOwnGunsWithoutChangingBaseContent(){
         PinyinTeamEffects effects = new PinyinTeamEffects();
         Unit first = player(), second = player();

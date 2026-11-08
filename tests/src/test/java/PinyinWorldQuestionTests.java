@@ -41,16 +41,14 @@ class PinyinWorldQuestionTests{
     }
 
     @Test
-    void countdownFreezesWhenPausedAndExpiresAtFiveSeconds(){
+    void fleeingQuestionHasNoFiveSecondTimeout(){
         PinyinWorldQuestion question = question();
         assertEquals(PinyinWorldQuestion.pending, question.update(0f, new Vec2(80, 0), null));
-        assertEquals(5f, question.secondsLeft());
-        assertEquals(PinyinWorldQuestion.pending, question.update(299f, null, null));
+        assertEquals(-1f, question.secondsLeft());
+        assertEquals(PinyinWorldQuestion.pending, question.update(60f * 60f, null, null));
         assertTrue(question.active());
-        assertEquals(PinyinWorldQuestion.timeout, question.update(1f, new Vec2(80, 0), null));
-        assertEquals(-1, question.collector(), "Timeout must not be attributed to either player");
-        assertFalse(question.active());
-        assertEquals(PinyinWorldQuestion.pending, question.update(300f, null, null));
+        assertEquals(0, question.update(15f, new Vec2(80, 0), null));
+        assertEquals(0, question.collector());
         question = question();
         question.clear();
         assertEquals(-1, question.collector());

@@ -4,7 +4,7 @@ import arc.util.*;
 import java.nio.charset.*;
 import java.util.*;
 
-/** Speak only the current Hanzi, replacing stale speech instead of overlapping questions. */
+/** Speak only the current learning token (Hanzi or pinyin), replacing stale speech. */
 public class PinyinPronunciation{
     private Process process;
     private long revision;

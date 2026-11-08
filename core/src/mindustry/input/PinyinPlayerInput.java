@@ -16,9 +16,24 @@ public class PinyinPlayerInput{
     }
 
     public static void update(Unit unit, boolean secondPlayer, Position target, boolean enabled, boolean mouseAllowed){
+        update(unit, secondPlayer, target, enabled, mouseAllowed, 1f);
+    }
+
+    /** Air-run control keeps the familiar keys but lets aircraft respond at a
+     * faster, more arcade-like speed without changing shared UnitType values. */
+    public static void update(Unit unit, boolean secondPlayer, Position target, boolean enabled, boolean mouseAllowed, float speedScale){
+        update(unit, secondPlayer, target, enabled, mouseAllowed, speedScale, false);
+    }
+
+    public static void updateSurvival(Unit unit, boolean secondPlayer, Position target, boolean enabled){
+        update(unit, secondPlayer, target, enabled, true, 2f, true);
+    }
+
+    private static void update(Unit unit, boolean secondPlayer, Position target, boolean enabled,
+        boolean mouseAllowed, float speedScale, boolean survival){
         PinyinGamepad.State pad = PinyinGamepad.state;
         boolean padActive = secondPlayer && pad.connected && (!pad.move.isZero() || !pad.aim.isZero() || pad.fire || pad.dashTap);
-        boolean firing = enabled && ((secondPlayer ? mouseAllowed && Core.input.keyDown(KeyCode.mouseLeft) : Core.input.keyDown(KeyCode.j)) || secondPlayer && pad.connected && pad.fire);
+        boolean firing = enabled && (survival && target != null || (secondPlayer ? mouseAllowed && Core.input.keyDown(KeyCode.mouseLeft) : Core.input.keyDown(KeyCode.j)) || secondPlayer && pad.connected && pad.fire);
         float dx = enabled ? axis(secondPlayer ? KeyCode.left : KeyCode.a, secondPlayer ? KeyCode.right : KeyCode.d) : 0f;
         float dy = enabled ? axis(secondPlayer ? KeyCode.down : KeyCode.s, secondPlayer ? KeyCode.up : KeyCode.w) : 0f;
         if(secondPlayer){
@@ -26,11 +41,19 @@ public class PinyinPlayerInput{
             if(padActive) controllerAim = true;
             if(enabled && pad.connected){ dx += pad.move.x; dy += pad.move.y; }
         }
-        unit.movePref(movement.set(dx, dy).limit(1f).scl(unit.speed()));
+        // Unit.speed() contains a facing/strafe penalty for P1 only. Survival
+        // movement must be identical in all directions and for both players.
+        float speed = survival ? unit.type.speed * unit.speedMultiplier : unit.speed();
+        movement.set(dx, dy).limit(1f).scl(speed * Math.max(0.1f, speedScale));
+        if(survival) unit.moveAt(movement);
+        else unit.movePref(movement);
 
         float aimX = unit.x + Angles.trnsx(unit.rotation, 100f);
         float aimY = unit.y + Angles.trnsy(unit.rotation, 100f);
-        if(secondPlayer && controllerAim && enabled){
+        if(survival && target != null){
+            aimX = target.getX();
+            aimY = target.getY();
+        }else if(secondPlayer && controllerAim && enabled){
             if(!pad.aim.isZero()){
                 aimX = unit.x + pad.aim.x * 160f;
                 aimY = unit.y + pad.aim.y * 160f;

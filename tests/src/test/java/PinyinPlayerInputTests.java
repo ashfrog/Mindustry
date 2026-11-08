@@ -139,6 +139,41 @@ class PinyinPlayerInputTests{
     }
 
     @Test
+    void survivalMovesEquallyInEveryDirectionAndBothPlayersAutomaticallyFire(){
+        Unit target = UnitTypes.flare.create(Team.crux);
+        target.set(300f, 300f);
+        float speed = -1f;
+        for(KeyCode key : new KeyCode[]{KeyCode.w, KeyCode.s, KeyCode.a, KeyCode.d}){
+            input.pressed.clear();
+            input.pressed.add(key);
+            first.vel.setZero();
+            first.rotation = 37f;
+            for(int tick = 0; tick < 120; tick++) PinyinPlayerInput.updateSurvival(first, false, target, true);
+            if(speed < 0f) speed = first.vel.len();
+            assertEquals(speed, first.vel.len(), 0.001f, "Aim direction cannot penalize strafing");
+            assertTrue(first.isShooting);
+            assertEquals(target.x, first.aimX, 0.01f);
+        }
+        assertEquals(first.type.speed * 2f, speed, 0.001f);
+        for(KeyCode key : new KeyCode[]{KeyCode.up, KeyCode.down, KeyCode.left, KeyCode.right}){
+            input.pressed.clear();
+            input.pressed.add(key);
+            second.vel.setZero();
+            for(int tick = 0; tick < 120; tick++) PinyinPlayerInput.updateSurvival(second, true, target, true);
+            assertEquals(speed, second.vel.len(), 0.001f);
+            assertTrue(second.isShooting);
+        }
+        input.pressed.clear();
+        first.vel.setZero();
+        first.set(100f, 150f);
+        for(int tick = 0; tick < 120; tick++) PinyinPlayerInput.updateSurvival(first, false, target, true);
+        assertTrue(first.vel.isZero());
+        assertEquals(150f, first.y, "No automatic upward movement");
+        PinyinPlayerInput.updateSurvival(first, false, target, false);
+        assertFalse(first.isShooting, "Pause must stop automatic fire");
+    }
+
+    @Test
     void disabledControlsStopFireEvenWhileKeysRemainHeld(){
         input.pressed.addAll(KeyCode.j, KeyCode.mouseLeft);
         update(true);
@@ -194,8 +229,10 @@ class PinyinPlayerInputTests{
         assertTrue(PinyinGamepad.state.move.isZero());
         assertTrue(PinyinGamepad.state.aim.isZero());
         assertTrue(PinyinGamepad.state.dashTap);
+        assertTrue(PinyinGamepad.state.fireTap);
         PinyinGamepad.update();
         assertFalse(PinyinGamepad.state.dashTap, "Holding dash must not retrigger every frame");
+        assertFalse(PinyinGamepad.state.fireTap, "Holding mining/fire must not cycle buildings every frame");
         update(false);
         assertFalse(second.isShooting);
         assertTrue(second.vel.isZero());
@@ -203,6 +240,27 @@ class PinyinPlayerInputTests{
         PinyinGamepad.update();
         update(true);
         assertTrue(second.vel.len() > 0f && second.vel.len() < second.speed(), "Analog movement must retain partial speed");
+    }
+
+    @Test
+    void gamepadPrankAndUltimateHaveIndependentEdgesAndReleaseOnDisconnect(){
+        PinyinGamepad.reader = pad -> { pad.prank = true; pad.ultimate = true; return true; };
+        PinyinGamepad.update();
+        assertTrue(PinyinGamepad.state.prankTap);
+        assertTrue(PinyinGamepad.state.ultimateTap);
+        assertFalse(PinyinGamepad.state.fire);
+        assertFalse(PinyinGamepad.state.dash);
+        PinyinGamepad.update();
+        assertFalse(PinyinGamepad.state.prankTap);
+        assertFalse(PinyinGamepad.state.ultimateTap);
+        PinyinGamepad.reader = pad -> false;
+        PinyinGamepad.update();
+        assertFalse(PinyinGamepad.state.prank);
+        assertFalse(PinyinGamepad.state.ultimate);
+        PinyinGamepad.reader = pad -> { pad.ultimate = true; return true; };
+        PinyinGamepad.update();
+        assertTrue(PinyinGamepad.state.ultimateTap);
+        assertFalse(PinyinGamepad.state.prankTap);
     }
 
     @Test

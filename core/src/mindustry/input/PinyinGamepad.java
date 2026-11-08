@@ -14,12 +14,17 @@ public class PinyinGamepad{
 
     public static void update(){
         boolean wasDash = state.dash;
+        boolean wasFire = state.fire;
+        boolean wasPrank = state.prank, wasUltimate = state.ultimate;
         state.clear();
         state.connected = reader != null && reader.poll(state);
         if(!state.connected){ state.clear(); return; }
         applyDeadzone(state.move);
         applyDeadzone(state.aim);
         state.dashTap = state.dash && !wasDash;
+        state.fireTap = state.fire && !wasFire;
+        state.prankTap = state.prank && !wasPrank;
+        state.ultimateTap = state.ultimate && !wasUltimate;
     }
 
     private static void applyDeadzone(Vec2 axis){
@@ -30,13 +35,13 @@ public class PinyinGamepad{
 
     public static class State{
         public final Vec2 move = new Vec2(), aim = new Vec2();
-        public boolean connected, fire, dash, dashTap;
+        public boolean connected, fire, fireTap, dash, dashTap, prank, prankTap, ultimate, ultimateTap;
         public String name = "";
 
         public void clear(){
             move.setZero();
             aim.setZero();
-            fire = dash = dashTap = false;
+            fire = fireTap = dash = dashTap = prank = prankTap = ultimate = ultimateTap = false;
         }
     }
 }

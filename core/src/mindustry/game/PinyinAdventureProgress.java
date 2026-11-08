@@ -1,9 +1,9 @@
 package mindustry.game;
 
-/** Objectives advance through four stages, then continue into another randomized chapter. */
+/** Endless chapter counter; the main route advances only when its Boss is defeated. */
 public class PinyinAdventureProgress{
     public static final float chargeNeeded = 60f * 25f;
-    private int stage, chapter, answers, kills;
+    private int stage, chapter, answers, delivered, kills;
     private float charge;
     private boolean bossDefeated;
 
@@ -14,7 +14,7 @@ public class PinyinAdventureProgress{
     }
 
     private void clearObjectives(){
-        answers = kills = 0;
+        answers = delivered = kills = 0;
         charge = 0f;
         bossDefeated = false;
     }
@@ -26,6 +26,7 @@ public class PinyinAdventureProgress{
     public int enemyLimit(){ return Math.min(PinyinCombatBalance.maxEnemies, 24 + difficulty() * 2); }
     public float waveInterval(){ return 60f * Math.max(5f, 8f / (1f + (PinyinCombatBalance.difficulty(difficulty()) - 1) * 0.06f)); }
     public int answers(){ return answers; }
+    public int delivered(){ return delivered; }
     public int kills(){ return kills; }
     public int requiredAnswers(){ return stage == 0 ? 3 : 4; }
     public int requiredKills(){ return stage == 0 ? 8 : stage == 1 ? 12 : 0; }
@@ -33,6 +34,9 @@ public class PinyinAdventureProgress{
     public float chargeProgress(){ return charge / chargeNeeded; }
     public boolean bossDefeated(){ return bossDefeated; }
     public void answer(){ answers++; }
+    public void deliver(){ delivered = Math.min(requiredAnswers(), delivered + 1); }
+    public int requiredDeliveries(){ return requiredAnswers(); }
+    public boolean shipReady(){ return delivered >= requiredDeliveries(); }
     public void defeat(boolean boss){ kills++; bossDefeated |= boss; }
 
     public void update(float delta, boolean nearBeacon){
@@ -43,13 +47,12 @@ public class PinyinAdventureProgress{
     }
 
     public boolean ready(){
-        return answers >= requiredAnswers() && kills >= requiredKills()
-            && (stage != 2 || charge >= chargeNeeded) && (stage != 3 || bossDefeated);
+        return bossDefeated;
     }
 
     /** Returns true only when a newly randomized map is needed. */
     public boolean advance(){
-        if(!ready()) return false;
+        if(!bossDefeated) return false;
         stage++;
         boolean nextChapter = stage == PinyinAdventureMap.stages;
         if(nextChapter){

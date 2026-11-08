@@ -5,7 +5,7 @@ package mindustry.game;
  * so they never pause the action or open a blocking dialog.
  */
 public class PinyinAdventureEvents{
-    public enum Kind{hunt, rescue, rhythm, survive}
+    public enum Kind{hunt, rescue, rhythm, survive, convoy}
     public static final float duration = 60f * 32f;
 
     private Kind kind;
@@ -29,6 +29,7 @@ public class PinyinAdventureEvents{
             case rhythm -> 3 + Math.min(3, difficulty / 8);
             case rescue -> 1;
             case survive -> 1;
+            case convoy -> 3;
         };
         active = true;
         completed = failed = false;
@@ -49,6 +50,10 @@ public class PinyinAdventureEvents{
 
     public void answered(){
         if(active && kind == Kind.rhythm && ++count >= target) complete();
+    }
+
+    public void collected(){
+        if(active && kind == Kind.convoy && ++count >= target) complete();
     }
 
     private void complete(){ active = false; completed = true; }

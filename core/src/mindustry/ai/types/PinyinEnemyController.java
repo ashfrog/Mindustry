@@ -1,5 +1,6 @@
 package mindustry.ai.types;
 
+import arc.*;
 import arc.func.*;
 import arc.graphics.*;
 import arc.graphics.g2d.*;
@@ -15,12 +16,15 @@ import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.game.*;
 import mindustry.type.*;
+import mindustry.world.*;
 
 import static mindustry.Vars.*;
 
 /** Slow enemies with distinct, readable attacks instead of faster pursuit. */
 public class PinyinEnemyController extends AIController{
-    public enum Kind{gunner, orbit, crawler, flame, artillery, spread, bomber, guardian, sniper, ice, burst, storm, frost, ram, siege, beam, electric}
+    /** Includes the original ground, flying and naval roster alongside the readable variants. */
+    public enum Kind{gunner, orbit, crawler, flame, artillery, spread, bomber, guardian, sniper, ice, burst, storm, frost, ram, siege, beam, electric,
+        reign, eclipse, vela, mono, poly, mega, risso, retusa, sei, omura, navanax}
     /** Secondary boss abilities. They unlock on later chapters so the first boss stays readable. */
     public enum BossSkill{shieldPulse, lightningGrid, freezeNova, ramAftershock, meteorRain}
     public final Kind kind;
@@ -34,28 +38,37 @@ public class PinyinEnemyController extends AIController{
     private int barrage;
     private final int difficulty;
     private final float attackScale;
+    private final boolean airMode;
 
     public PinyinEnemyController(Kind kind, Func<Unit, Unit> findPlayer){
-        this(kind, findPlayer, 1);
+        this(kind, findPlayer, 1, false);
     }
 
     public PinyinEnemyController(Kind kind, Func<Unit, Unit> findPlayer, int difficulty){
+        this(kind, findPlayer, difficulty, false);
+    }
+
+    /** Vertical arcade flight controller.  It ignores terrain and approaches from
+     * above at a readable speed so aircraft never become faster than children. */
+    public PinyinEnemyController(Kind kind, Func<Unit, Unit> findPlayer, int difficulty, boolean airMode){
         this.kind = kind;
         this.findPlayer = findPlayer;
         this.difficulty = PinyinCombatBalance.difficulty(difficulty);
         attackScale = PinyinCombatBalance.enemyDamageScale(difficulty);
+        this.airMode = airMode;
     }
 
     public static Kind regularKind(int index, int difficulty){
-        Kind[] kinds = {Kind.gunner, Kind.orbit, Kind.crawler, Kind.flame, Kind.spread, Kind.artillery, Kind.bomber, Kind.ice, Kind.burst, Kind.sniper, Kind.beam, Kind.electric};
+        Kind[] kinds = {Kind.gunner, Kind.orbit, Kind.crawler, Kind.flame, Kind.spread, Kind.artillery, Kind.bomber, Kind.ice, Kind.burst, Kind.sniper, Kind.beam, Kind.electric,
+            Kind.reign, Kind.eclipse, Kind.vela, Kind.mono, Kind.poly, Kind.mega, Kind.risso, Kind.retusa, Kind.sei, Kind.omura, Kind.navanax};
         return kinds[Math.floorMod(index, Math.min(kinds.length, 4 + difficulty))];
     }
 
     private static final Kind[][] themedKinds = {
-        {Kind.crawler, Kind.orbit, Kind.gunner, Kind.spread, Kind.burst, Kind.sniper, Kind.electric},
-        {Kind.gunner, Kind.artillery, Kind.bomber, Kind.sniper, Kind.spread, Kind.flame, Kind.beam},
-        {Kind.ice, Kind.burst, Kind.orbit, Kind.sniper, Kind.artillery, Kind.crawler, Kind.electric},
-        {Kind.flame, Kind.crawler, Kind.artillery, Kind.bomber, Kind.burst, Kind.spread, Kind.beam}
+        {Kind.crawler, Kind.orbit, Kind.gunner, Kind.spread, Kind.burst, Kind.sniper, Kind.electric, Kind.mono, Kind.poly, Kind.mega},
+        {Kind.gunner, Kind.artillery, Kind.bomber, Kind.sniper, Kind.spread, Kind.flame, Kind.beam, Kind.reign, Kind.eclipse, Kind.vela},
+        {Kind.ice, Kind.burst, Kind.orbit, Kind.sniper, Kind.artillery, Kind.crawler, Kind.electric, Kind.risso, Kind.retusa, Kind.sei},
+        {Kind.flame, Kind.crawler, Kind.artillery, Kind.bomber, Kind.burst, Kind.spread, Kind.beam, Kind.omura, Kind.navanax, Kind.reign}
     };
     private static final Kind[][] themedBosses = {
         {Kind.ram, Kind.storm, Kind.guardian}, {Kind.siege, Kind.storm, Kind.ram},
@@ -92,7 +105,14 @@ public class PinyinEnemyController extends AIController{
         return false;
     }
 
+    /** Test/equipment-safe type; weaponless utility units use a harmless armed shell. */
     public static UnitType type(Kind kind){
+        UnitType actual = visualType(kind);
+        return actual.weapons.isEmpty() ? UnitTypes.dagger : actual;
+    }
+
+    /** Actual vanilla silhouette used by the adventure map. */
+    public static UnitType visualType(Kind kind){
         return switch(kind){
             case gunner -> UnitTypes.dagger;
             case orbit -> UnitTypes.flare;
@@ -111,7 +131,31 @@ public class PinyinEnemyController extends AIController{
             case siege -> UnitTypes.quad;
             case beam -> UnitTypes.quasar;
             case electric -> UnitTypes.pulsar;
+            case reign -> UnitTypes.reign;
+            case eclipse -> UnitTypes.eclipse;
+            case vela -> UnitTypes.vela;
+            case mono -> UnitTypes.mono;
+            case poly -> UnitTypes.poly;
+            case mega -> UnitTypes.mega;
+            case risso -> UnitTypes.risso;
+            case retusa -> UnitTypes.retusa;
+            case sei -> UnitTypes.sei;
+            case omura -> UnitTypes.omura;
+            case navanax -> UnitTypes.navanax;
         };
+    }
+
+    /**
+     * Recruited enemies use a compact carrier.  Keeping the giant vanilla boss
+     * silhouettes as allies makes the camera unreadable and some utility units
+     * have no safe weapon mounts for a player-side controller.
+     */
+    public static UnitType recruitType(Kind kind){
+        UnitType actual = visualType(kind);
+        if(actual.naval) return UnitTypes.risso;
+        if(actual.flying && actual.hitSize > 14f) return UnitTypes.flare;
+        if(actual.hitSize > 14f || actual.weapons.size > 3) return UnitTypes.dagger;
+        return actual.weapons.isEmpty() ? UnitTypes.flare : actual;
     }
 
     public static PinyinArsenal.Kind ammunition(Kind kind){
@@ -129,14 +173,27 @@ public class PinyinEnemyController extends AIController{
     }
 
     public static void equip(Unit unit, Kind kind, int difficulty){
+        if(unit == null) return;
         float tier = PinyinCombatBalance.difficulty(difficulty) - 1, scale = PinyinCombatBalance.enemyDamageScale(difficulty);
         float healthScale = PinyinCombatBalance.enemyHealthScale(difficulty);
         float bossHealth = kind == Kind.siege ? 6800f : kind == Kind.ram ? 5200f : 4200f;
         unit.maxHealth = unit.health = (boss(kind) ? bossHealth : kind == Kind.flame || kind == Kind.artillery ? 220f : 130f) * healthScale;
         unit.armor = boss(kind) ? 4f + tier * 0.35f : 0f;
         if(boss(kind)) unit.shield = 180f + tier * 45f;
+        if(unit.mounts.length == 0){
+            Weapon fallback = UnitTypes.alpha.weapons.first().copy();
+            fallback.bullet = PinyinArsenal.create(ammunition(kind), 5f * scale, true);
+            fallback.reload = 90f;
+            fallback.minShootVelocity = 0f;
+            fallback.maxShootVelocity = -1f;
+            unit.mounts = new WeaponMount[]{fallback.mountType.get(fallback)};
+        }
         for(int i = 0; i < unit.mounts.length; i++){
-            Weapon weapon = unit.type.weapons.get(i).copy();
+            // Support utility silhouettes (for example mono) that ship without a
+            // native weapon list.  They still get a safe, readable fallback gun.
+            Weapon weapon = i < unit.type.weapons.size
+                ? unit.type.weapons.get(i).copy()
+                : UnitTypes.alpha.weapons.first().copy();
             BulletType bullet = PinyinArsenal.create(ammunition(kind), (boss(kind) ? 7f : 5f) * scale, true);
             if(kind == Kind.sniper){ bullet.speed = 3.4f; bullet.lifetime = 90f; }
             weapon.shootSound = PinyinArsenal.sound(ammunition(kind));
@@ -169,12 +226,41 @@ public class PinyinEnemyController extends AIController{
     public void updateMovement(){
         Unit player = findPlayer.get(unit);
         if(player == null) return;
+        if(airMode){
+            unit.aim(player.x, player.y, true);
+            unit.lookAt(player);
+            float distance = unit.dst(player);
+            boolean boss = boss(kind);
+            boolean shoot = distance < (boss ? 23f : 17f) * tilesize;
+            unit.controlWeapons(shoot, shoot);
+            float speed = Math.min(unit.speed() * (boss ? 0.22f : 0.30f), player.speed() * 0.58f);
+            if(speed <= 0.01f) speed = 0.35f * tilesize;
+            vec.set(player).sub(unit).nor();
+            // A small side weave keeps the vertical stream lively without making
+            // enemies faster than the players or impossible to dodge.
+            vec.x += Mathf.sin(Time.time / 28f + unit.id * 0.7f) * 0.14f;
+            unit.movePref(vec.nor().scl(speed));
+            return;
+        }
+        // Fixed-map enemies wake only when a player is on screen; leaving the area lets
+        // the player break contact instead of dragging the whole map into a chase.
+        float scale = renderer == null ? 1f : Math.max(1f, renderer.getScale());
+        float visibleRange = Math.max(28f * tilesize,
+            Core.graphics.getWidth() / scale * 0.72f);
+        if(unit.dst(player) > visibleRange){
+            unit.controlWeapons(false, false);
+            unit.movePref(vec.setZero());
+            warning = 0f;
+            return;
+        }
         unit.aim(player.x, player.y, true);
         unit.lookAt(player);
+        boolean visible = seesPlayer(player);
         boolean bomb = kind == Kind.crawler || kind == Kind.artillery || kind == Kind.bomber || kind == Kind.sniper || kind == Kind.siege || kind == Kind.beam || kind == Kind.electric;
         float range = kind == Kind.flame ? 6f : 15f;
         boolean telegraphed = kind == Kind.crawler || kind == Kind.sniper || kind == Kind.beam || kind == Kind.electric;
-        unit.controlWeapons(!telegraphed && unit.within(player, range * tilesize), !telegraphed && unit.within(player, range * tilesize));
+        unit.controlWeapons(visible && !telegraphed && unit.within(player, range * tilesize),
+            visible && !telegraphed && unit.within(player, range * tilesize));
 
         cooldown -= Time.delta;
         if(warning > 0f){
@@ -215,7 +301,7 @@ public class PinyinEnemyController extends AIController{
             }
             return;
         }
-        if(cooldown <= 0f && unit.within(player, (kind == Kind.crawler ? 4f : kind == Kind.electric ? 10f : kind == Kind.beam ? 16f : 21f) * tilesize)
+        if(visible && cooldown <= 0f && unit.within(player, (kind == Kind.crawler ? 4f : kind == Kind.electric ? 10f : kind == Kind.beam ? 16f : 21f) * tilesize)
             && (bomb || kind == Kind.flame || kind == Kind.guardian || kind == Kind.ram)){
             attackX = player.x;
             attackY = player.y;
@@ -271,6 +357,26 @@ public class PinyinEnemyController extends AIController{
             vec.set(destination).sub(unit).limit(speed);
         }
         unit.movePref(vec);
+    }
+
+    /** Ground attackers only fire when the route between them and the player is open. */
+    private boolean seesPlayer(Unit player){
+        if(unit.isFlying()) return true;
+        int x = unit.tileX(), y = unit.tileY();
+        int targetX = player.tileX(), targetY = player.tileY();
+        int dx = Math.abs(targetX - x), sx = x < targetX ? 1 : -1;
+        int dy = -Math.abs(targetY - y), sy = y < targetY ? 1 : -1;
+        int error = dx + dy;
+        while(true){
+            if(!(x == unit.tileX() && y == unit.tileY())){
+                Tile tile = world.tile(x, y);
+                if(tile == null || tile.solid()) return false;
+            }
+            if(x == targetX && y == targetY) return true;
+            int twice = 2 * error;
+            if(twice >= dy){ error += dy; x += sx; }
+            if(twice <= dx){ error += dx; y += sy; }
+        }
     }
 
     private void releaseBossSkill(BossSkill skill, Unit player){

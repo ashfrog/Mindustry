@@ -11,7 +11,8 @@ import static mindustry.Vars.*;
 
 /** A single shared question, answered once by walking onto a world pickup. */
 public class PinyinWorldQuestion{
-    public static final float duration = 60f * 5f, pickupRadius = tilesize * 1.1f;
+    /** Answers are living pickups now; they do not disappear on a five-second timer. */
+    public static final float duration = Float.POSITIVE_INFINITY, pickupRadius = tilesize * 1.1f;
     public static final int pending = -2, timeout = -1;
     public final Vec2[] positions = {new Vec2(), new Vec2(), new Vec2()};
     private final Vec2[] hintOrigins = {new Vec2(), new Vec2(), new Vec2()};
@@ -22,6 +23,7 @@ public class PinyinWorldQuestion{
     private int chestIndex;
     private int collector = -1;
     private float remaining;
+    private float elapsed;
     private boolean active;
     private float hintPhase;
 
@@ -29,8 +31,10 @@ public class PinyinWorldQuestion{
     public int chestIndex(){ return chestIndex; }
     /** Player slot that picked the option, or -1 for a timeout/no selection. */
     public int collector(){ return collector; }
-    public float secondsLeft(){ return Math.max(0f, remaining / 60f); }
-    public void clear(){ active = false; collector = -1; clearCharge(); }
+    /** A fleeing answer remains until collected; negative means no countdown is active. */
+    public float secondsLeft(){ return -1f; }
+    public boolean hintActive(){ return active && hintPhase >= 60f * 2.5f; }
+    public void clear(){ active = false; collector = -1; elapsed = 0f; clearCharge(); }
     public float chargeProgress(int index){ return chestCharge[index] / chargeDuration; }
     public int chargeOpener(){ return chargeOpener; }
 
@@ -41,6 +45,7 @@ public class PinyinWorldQuestion{
         chestIndex = chest;
         collector = -1;
         remaining = duration;
+        elapsed = 0f;
         active = true;
         hintPhase = 0f;
         for(int i = 0; i < 3; i++){
@@ -55,22 +60,24 @@ public class PinyinWorldQuestion{
      * it backs away from its owner and wiggles inside a small radius around its spawn point.
      */
     public void updateHint(float delta, Position hunter){
-        if(!active || delta <= 0f || secondsLeft() > 2.5f || hunter == null) return;
+        if(!active || delta <= 0f || hunter == null) return;
         hintPhase += delta;
         for(int i = 0; i < 3; i++){
             if(choices[i] != 0) continue;
             Vec2 position = positions[i], origin = hintOrigins[i];
             float dx = position.x - hunter.getX(), dy = position.y - hunter.getY();
             float length = Mathf.len(dx, dy);
+            float speed = tilesize * 0.055f;
+            float moveX, moveY;
             if(length < tilesize * 9f && length > 0.01f){
-                float speed = tilesize * 0.055f;
-                position.x += dx / length * speed * delta;
-                position.y += dy / length * speed * delta;
+                moveX = dx / length * speed * delta;
+                moveY = dy / length * speed * delta;
             }else{
                 float angle = hintPhase * 3f + i * 120f;
-                position.x += Mathf.cos(angle) * tilesize * 0.012f * delta;
-                position.y += Mathf.sin(angle) * tilesize * 0.012f * delta;
+                moveX = Mathf.cos(angle) * tilesize * 0.012f * delta;
+                moveY = Mathf.sin(angle) * tilesize * 0.012f * delta;
             }
+            moveOnWalkableTile(position, moveX, moveY);
             // Keep the moving answer close enough to chase and always inside its local arena.
             float max = tilesize * 4f;
             float ox = position.x - origin.x, oy = position.y - origin.y, offset = Mathf.len(ox, oy);
@@ -78,13 +85,30 @@ public class PinyinWorldQuestion{
         }
     }
 
+    private void moveOnWalkableTile(Vec2 position, float dx, float dy){
+        Vec2 candidate = new Vec2(position).add(dx, dy);
+        Tile tile = world.tileWorld(candidate.x, candidate.y);
+        if(tile != null && !tile.solid()){
+            position.set(candidate);
+            return;
+        }
+        // Slide along a wall instead of allowing the correct answer to escape into it.
+        candidate.set(position).add(dx, 0f);
+        tile = world.tileWorld(candidate.x, candidate.y);
+        if(tile != null && !tile.solid()){
+            position.set(candidate);
+            return;
+        }
+        candidate.set(position).add(0f, dy);
+        tile = world.tileWorld(candidate.x, candidate.y);
+        if(tile != null && !tile.solid()) position.set(candidate);
+    }
+
     public int update(float delta, Position first, Position second){
         if(!active || delta <= 0f) return pending;
-        remaining = Math.max(0f, remaining - delta);
+        elapsed += delta;
         int result = pending;
-        if(remaining <= 0f){
-            result = timeout;
-        }else if(duration - remaining >= 15f){
+        if(elapsed >= 15f){
             for(int i = 0; i < 3; i++){
                 boolean firstHere = first != null && positions[i].within(first, pickupRadius);
                 boolean secondHere = second != null && positions[i].within(second, pickupRadius);
@@ -106,6 +130,7 @@ public class PinyinWorldQuestion{
         int ready = -1;
         for(int i = 0; i < chestCharge.length; i++){
             Point2 chest = map.chests[i];
+            if(chest == null) continue;
             boolean available = i / PinyinAdventureMap.chestsPerStage == stage && !unavailable[i];
             boolean firstHere = available && first != null && first.within(chest.x * tilesize, chest.y * tilesize, chargeRadius);
             boolean secondHere = available && second != null && second.within(chest.x * tilesize, chest.y * tilesize, chargeRadius);
@@ -118,11 +143,17 @@ public class PinyinWorldQuestion{
 
     /** Breadth-first search keeps every option within ten walkable tiles of the opener. */
     public static Vec2[] placeOptions(Tiles tiles, int stage, Position opener, Position teammate){
-        return placeOptions(tiles, stage, opener, teammate, null);
+        return placeOptions(tiles, stage, opener, teammate, null, PinyinAdventureMap.left(stage), PinyinAdventureMap.right(stage));
     }
 
     /** Place a second player's answer set away from an already active answer set. */
     public static Vec2[] placeOptions(Tiles tiles, int stage, Position opener, Position teammate, Vec2[] excluded){
+        return placeOptions(tiles, stage, opener, teammate, excluded, PinyinAdventureMap.left(stage), PinyinAdventureMap.right(stage));
+    }
+
+    /** Variant used by the live single-stage map, whose route spans the full map width. */
+    public static Vec2[] placeOptions(Tiles tiles, int stage, Position opener, Position teammate, Vec2[] excluded,
+                                      int leftBoundary, int rightBoundary){
         int[] distances = new int[tiles.width * tiles.height];
         Arrays.fill(distances, -1);
         ArrayDeque<Tile> queue = new ArrayDeque<>();
@@ -145,7 +176,7 @@ public class PinyinWorldQuestion{
             for(Point2 direction : Geometry.d4){
                 int x = tile.x + direction.x, y = tile.y + direction.y;
                 Tile next = tiles.get(x, y);
-                if(next == null || x < PinyinAdventureMap.left(stage) + 2 || x > PinyinAdventureMap.right(stage) - 2
+                if(next == null || x < leftBoundary + 2 || x > rightBoundary - 2
                     || y < 3 || y >= tiles.height - 3 || next.solid() || distances[x + y * tiles.width] >= 0) continue;
                 distances[x + y * tiles.width] = steps + 1;
                 queue.add(next);

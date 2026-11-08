@@ -36,4 +36,15 @@ class PinyinAdventureEventsTests{
         assertFalse(events.active());
         assertTrue(events.consumeCompleted() || events.failed());
     }
+
+    @Test
+    void convoyEventNeedsThreeCollectedCaches(){
+        PinyinAdventureEvents events = new PinyinAdventureEvents();
+        events.start(PinyinAdventureEvents.Kind.convoy, 4);
+        events.collected();
+        events.collected();
+        assertTrue(events.active());
+        events.collected();
+        assertTrue(events.consumeCompleted());
+    }
 }
