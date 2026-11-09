@@ -102,10 +102,10 @@ public class PinyinLearningDialog extends BaseDialog{
         cont.add(text("pinyin.subtitle")).color(Color.lightGray).wrap().center();
         cont.row();
 
+        addEscapeMode();
         addMode(0, "pinyin.mode.initial", "pinyin.mode.initial.desc", Pal.accent);
         addMode(1, "pinyin.mode.final", "pinyin.mode.final.desc", Pal.heal);
         addMode(2, "pinyin.mode.spelling", "pinyin.mode.spelling.desc", Pal.lancerLaser);
-        addEscapeMode();
         cont.row();
         cont.add(format("pinyin.best", Core.settings.getInt("pinyin-best", 0))).color(Pal.accent).center();
     }

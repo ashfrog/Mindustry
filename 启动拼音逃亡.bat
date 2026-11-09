@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title Pinyin Escape - MindustryX
+title Pinyin Tower Defense - MindustryX
 
 rem Always run from the project folder, even when started by double-clicking.
 cd /d "%~dp0"
@@ -11,7 +11,7 @@ if not exist "%~dp0gradlew.bat" (
     exit /b 1
 )
 
-echo Starting Pinyin Escape. The first launch may take a little while to compile...
+echo Starting Pinyin Tower Defense. The first launch may take a little while to compile...
 call "%~dp0gradlew.bat" desktop:run --no-daemon
 set "exitCode=%errorlevel%"
 

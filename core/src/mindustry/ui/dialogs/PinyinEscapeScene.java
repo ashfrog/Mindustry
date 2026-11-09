@@ -32,6 +32,7 @@ import static mindustry.Vars.*;
 
 /** A real Mindustry map that turns exploration and pursuit into pinyin practice. */
 public class PinyinEscapeScene{
+    private final PinyinDefenseScene defense = new PinyinDefenseScene();
     private static final int WIDTH = PinyinAdventureMap.width, HEIGHT = PinyinAdventureMap.height;
     private static final int AIR_WIDTH = PinyinAirBattleMap.width, AIR_HEIGHT = PinyinAirBattleMap.height;
     private static final int ENERGY_NEEDED = 3;
@@ -238,48 +239,7 @@ public class PinyinEscapeScene{
     }
 
     public void start(){
-        previousCameraScale = renderer.getScale();
-        previousHudShown = ui.hudfrag.shown;
-        active = true;
-        worldReady = false;
-        energy[0] = energy[1] = 0;
-        supplies = 100;
-        pulseCharge[0] = pulseCharge[1] = 0;
-        carriedHelpers.clear();
-        carriedRecruits.clear();
-        pinyinPayloads.clear();
-        adventure.reset();
-        pursuers.clear();
-        firstPlayer = partner = null;
-        for(PinyinWorldQuestion question : worldQuestions) question.clear();
-        resetStage();
-        lives.reset();
-        for(PinyinTeamEffects effects : playerEffects){
-            effects.reset();
-            if(airMode) effects.enableEndlessGrowth();
-        }
-        survivalTime = 0f;
-        survivalKills = survivalBosses = 0;
-        rounds.reset();
-        fieldWorks.reset();
-        skills.reset();
-        Arrays.fill(selectedWorks, 0);
-        Arrays.fill(miningProgress, 0f);
-        Arrays.fill(celebration, 0f);
-        Arrays.fill(lastCorrect, -10000f);
-        coopCooldown = fieldServiceTimer = 0f;
-        for(PinyinPlayerMomentum progress : momentum) progress.reset();
-        supplyTimer = 60f * 20f;
-        feedback.clear();
-        spawnWave = 0;
-        bossSignal = 0f;
-        airAnswers.clear();
-        Arrays.fill(airBoards, null);
-        airWave = 0;
-        sideEvent.reset();
-        sideEventCooldown = 60f * 12f;
-        ui.pinyin.hide();
-        loadChapter();
+        defense.start();
     }
 
     private void loadChapter(){
@@ -798,7 +758,7 @@ public class PinyinEscapeScene{
     }
 
     private void drawAdventure(){
-        if(!isActive()) return;
+        if(!active || !worldReady || !state.isGame()) return;
         if(airMode){
             drawAirBattle();
             return;
@@ -1628,7 +1588,7 @@ public class PinyinEscapeScene{
     }
 
     public boolean isActive(){
-        return active && worldReady && state.isGame();
+        return defense.isActive() || active && worldReady && state.isGame();
     }
 
     private boolean controlsEnabled(){
@@ -1638,6 +1598,10 @@ public class PinyinEscapeScene{
     }
 
     public void updateDesktopControls(){
+        if(defense.isActive()){
+            defense.updateDesktopControls();
+            return;
+        }
         if(airMode){
             constrainAirPlayer(firstPlayer);
             constrainAirPlayer(partner);
